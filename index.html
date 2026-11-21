@@ -36,7 +36,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <p id="toolStatus" role="status" hidden></p>
 <div id="publishPanel" hidden>
 <h3 id="publishHeading">發布月報到家長頁</h3>
-<p id="publishPreview"></p><details open><summary>本月公開明細</summary><p>月報會列出本月每筆交易的日期、類型、用途分類和金額。你可以在這裡更正用途分類。</p><div id="publicDetails"></div></details>
+<p id="publishPreview"></p><p id="publicDetails"></p>
 <form id="publish"><label>GitHub 發布權杖<input id="publishToken" type="password" required autocomplete="off" spellcheck="false"></label><button class="primary">發布一次</button> <button type="submit" id="enableAuto">啟用本次自動同步</button></form>
 <p id="publishStatus" role="status"></p>
 <details><summary>如何取得發布權杖？</summary>
@@ -309,26 +309,7 @@ function publicDetailsFor(month){
   .sort((a,b)=>a.date.localeCompare(b.date));
 }
 function renderPublicDetails(month){
- const panel=$('publicDetails');
- panel.replaceChildren();
- for(const row of state.rows.filter(row=>row.date.startsWith(month+'-')).sort((a,b)=>a.date.localeCompare(b.date))){
-  const label=document.createElement('label');
-  const select=document.createElement('select');
-  label.textContent=row.date+' ｜ '+(row.kind==='income'?'收入':'支出')+' ｜ '+row.title+' ｜ '+money(row.amount);
-  for(const category of publicCategories[row.kind])select.add(new Option(category,category));
-  select.value=publicCategory(row);
-  select.onchange=async()=>{
-   try{
-    await save({...state,rows:state.rows.map(item=>item.id===row.id?{...item,publicCategory:select.value}:item)});
-    $('publishStatus').textContent='已儲存公開用途。';
-   }catch(error){
-    select.value=publicCategory(row);
-    $('publishStatus').textContent='無法儲存公開用途。';
-   }
-  };
-  label.append(select);panel.append(label);
- }
- if(!panel.children.length)panel.textContent='這個月沒有交易紀錄。';
+ $('publicDetails').textContent='本月 '+publicDetailsFor(month).length+' 筆收支會隨月報公開。';
 }
 function cleanPublicDetails(details,month){
  if(!Array.isArray(details))return [];
@@ -501,8 +482,8 @@ async function init(){
   if(!$('year').checkValidity()||!token){status.textContent='請填寫有效年份和權杖。';return}
   const month=monthKey(),values=totals(month);
   const details=publicDetailsFor(month);
-  const preview=details.map(item=>item.date+' '+(item.kind==='income'?'收入':'支出')+' '+item.category+' '+money(Math.round(item.amount*100))).join('\n');
-  if(!confirm((enable?'啟用 '+month+' 的自動同步？儲存後會更新此月報。':'發布 '+month+' 月報？')+'\n'+describe(values)+'\n公開明細 '+details.length+' 筆'+(preview?'\n'+preview:'')))return;
+  
+  if(!confirm((enable?'啟用 '+month+' 的自動同步？儲存後會更新此月報。':'發布 '+month+' 月報？')+'\n'+describe(values)+'\n公開明細 '+details.length+' 筆'))return;
   if(enable){
    autoSession={token,month,last:null};
    $('autoBar').hidden=false;
