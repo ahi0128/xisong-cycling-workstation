@@ -36,7 +36,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <p id="toolStatus" role="status" hidden></p>
 <div id="publishPanel" hidden>
 <h3 id="publishHeading">發布月報到家長頁</h3>
-<p id="publishPreview"></p><details open><summary>本月公開明細</summary><p>預設列出每筆的日期、類型、用途和金額。系統依常見品名帶入用途，其餘標成「其他收入」或「其他支出」。可以更改分類或選擇不公開該筆。</p><div id="publicDetails"></div></details>
+<p id="publishPreview"></p><details open><summary>本月公開明細</summary><p>月報會列出本月每筆交易的日期、類型、用途分類和金額。你可以在這裡更正用途分類。</p><div id="publicDetails"></div></details>
 <form id="publish"><label>GitHub 發布權杖<input id="publishToken" type="password" required autocomplete="off" spellcheck="false"></label><button class="primary">發布一次</button> <button type="submit" id="enableAuto">啟用本次自動同步</button></form>
 <p id="publishStatus" role="status"></p>
 <details><summary>如何取得發布權杖？</summary>
@@ -297,7 +297,6 @@ async function syncAuto(session){
 }
 
 function publicCategory(row){
- if(row.publicCategory==='')return '';
  if(publicCategories[row.kind].includes(row.publicCategory))return row.publicCategory;
  const matches=row.kind==='income'
   ? [[/隊費/,'隊費'],[/補助/,'補助'],[/捐款/,'捐款']]
@@ -316,7 +315,6 @@ function renderPublicDetails(month){
   const label=document.createElement('label');
   const select=document.createElement('select');
   label.textContent=row.date+' ｜ '+(row.kind==='income'?'收入':'支出')+' ｜ '+row.title+' ｜ '+money(row.amount);
-  select.add(new Option('不公開此筆',''));
   for(const category of publicCategories[row.kind])select.add(new Option(category,category));
   select.value=publicCategory(row);
   select.onchange=async()=>{
@@ -459,7 +457,7 @@ async function init(){
    amount:Math.round(Number($('amount').value)*100),note:$('note').value,
    receipt:file?await readReceipt(file):editing?.receipt||null,
    receiptName:file?.name||editing?.receiptName||null,
-   ...((editing?.publicCategory===''||(editing?.kind===$('kind').value&&editing.publicCategory!==undefined))?{publicCategory:editing.publicCategory}:{})
+   ...(editing?.kind===$('kind').value&&editing.publicCategory?{publicCategory:editing.publicCategory}:{})
   };
   await save({...state,rows:[...state.rows.filter(other=>other.id!==row.id),row]});
   reset(date);render();feedback('已儲存。');
