@@ -31,11 +31,11 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <button type="button" id="backup">備份帳本</button>
 <button type="button" id="openPublish" class="primary" aria-controls="publishPanel" aria-expanded="false">發布月報</button>
 </div>
-<p>備份會下載收支與憑證。家長月報只顯示每月收支總額與餘額。</p>
+<p>備份會下載收支與憑證。家長月報顯示每月總額與餘額，也可選擇附上交易明細。</p>
 <p id="toolStatus" role="status" hidden></p>
 <div id="publishPanel" hidden>
 <h3 id="publishHeading">發布月報到家長頁</h3>
-<p id="publishPreview"></p>
+<p id="publishPreview"></p><details><summary>選擇要公開的交易明細（選填）</summary><p>為要公開的交易選擇用途。家長只會看到日期、收支類型、公開用途和金額。</p><div id="publicDetails"></div></details>
 <form id="publish"><label>GitHub 發布權杖<input id="publishToken" type="password" required autocomplete="off" spellcheck="false"></label><button class="primary">確認發布</button></form>
 <p id="publishStatus" role="status"></p>
 <details><summary>如何取得發布權杖？</summary>
@@ -143,6 +143,7 @@ function render(){
  $('totals').textContent=key+' ｜ '+describe(totals(key));
  $('publishHeading').textContent='發布 '+key+' 月報';
  $('publishPreview').textContent=describe(totals(key));
+ renderPublicDetails(key);
  $('annual').textContent=y+' 年 ｜ '+describe(totals(String(y)));
  $('balance').value=state.opening/100;
  $('dayTitle').textContent=date+' 收支明細';
@@ -252,19 +253,52 @@ async function switchView(view){
 for(const control of document.querySelectorAll('[data-view]')){
  control.addEventListener('click',()=>switchView(control.dataset.view));
 }
+const publicCategories={income:['隊費','補助','捐款','其他收入'],expense:['教練費','報名費','交通費','隊車油料','車輛維護','器材費','補給飲水','行政費','其他支出']};
+let detailMonth='';
+let detailRows=[];
+function renderPublicDetails(month){
+ const panel=$('publicDetails');
+ const previous=month===detailMonth?new Map(detailRows.map(({row,select})=>[row.id,select.value])):new Map();
+ detailMonth=month;
+ detailRows=[];
+ panel.replaceChildren();
+ for(const row of state.rows.filter(row=>row.date.startsWith(month+'-')).sort((a,b)=>a.date.localeCompare(b.date))){
+  const label=document.createElement('label');
+  const select=document.createElement('select');
+  label.textContent=row.date+' ｜ '+(row.kind==='income'?'收入':'支出')+' ｜ '+row.title+' ｜ '+money(row.amount);
+  select.add(new Option('不公開此筆',''));
+  for(const category of publicCategories[row.kind])select.add(new Option(category,category));
+  select.value=previous.get(row.id)||'';
+  label.append(select);
+  panel.append(label);
+  detailRows.push({row,select});
+ }
+ if(!detailRows.length)panel.textContent='這個月沒有交易紀錄。';
+}
+function selectedDetails(){
+ return detailRows.filter(({select})=>select.value).map(({row,select})=>({
+  date:row.date,kind:row.kind,category:select.value,amount:row.amount/100
+ }));
+}
+function cleanPublicDetails(details,month){
+ if(!Array.isArray(details))return [];
+ return details.filter(item=>item&&validDate(item.date)&&item.date.startsWith(month+'-')&&
+  Object.hasOwn(publicCategories,item.kind)&&publicCategories[item.kind].includes(item.category)&&
+  Number.isFinite(item.amount)&&item.amount>0).map(({date,kind,category,amount})=>({date,kind,category,amount}));
+}
 const summaryKeys=['opening','income','expense','closing'];
-function mergeReport(reports,month,values){
+function mergeReport(reports,month,values,details=[]){
  if(!Array.isArray(reports)||!reports.every(row=>row&&/^\d{4}-(0[1-9]|1[0-2])$/.test(row.month)&&summaryKeys.every(key=>typeof row[key]==='number'&&Number.isFinite(row[key])))){
   throw new Error('家長月報格式不符，原有資料已保留。');
  }
  const clean=reports.filter(row=>row.month!==month).map(row=>({
-  month:row.month,...Object.fromEntries(summaryKeys.map(key=>[key,row[key]]))
+  month:row.month,...Object.fromEntries(summaryKeys.map(key=>[key,row[key]])),...(row.details?{details:cleanPublicDetails(row.details,row.month)}:{})
  }));
- clean.push({month,...Object.fromEntries(summaryKeys.map(key=>[key,values[key]/100]))});
+ clean.push({month,...Object.fromEntries(summaryKeys.map(key=>[key,values[key]/100])),...(details.length?{details:cleanPublicDetails(details,month)}:{})});
  clean.sort((a,b)=>a.month.localeCompare(b.month));
  return {year:Number(clean.at(-1).month.slice(0,4)),reports:clean};
 }
-async function publishMonth(token,month,values){
+async function publishMonth(token,month,values,details){
  const endpoint='https://api.github.com/repos/ahi0128/xisong-cycling-parent/contents/ledger-summary.json';
  const headers={Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
  const current=await fetch(endpoint+'?ref=main',{headers,cache:'no-store',redirect:'error'});
@@ -272,7 +306,8 @@ async function publishMonth(token,month,values){
  const file=await current.json();
  if(file.encoding!=='base64'||!file.sha)throw new Error('無法驗證現有月報版本。');
  const source=new TextDecoder().decode(Uint8Array.from(atob(file.content),character=>character.charCodeAt(0)));
- const content=btoa(JSON.stringify(mergeReport(JSON.parse(source).reports,month,values),null,2)+'\n');
+ const payload=new TextEncoder().encode(JSON.stringify(mergeReport(JSON.parse(source).reports,month,values,details),null,2)+'\n');
+ const content=btoa(Array.from(payload,byte=>String.fromCharCode(byte)).join(''));
  const result=await fetch(endpoint,{
   method:'PUT',headers:{...headers,'Content-Type':'application/json'},redirect:'error',
   body:JSON.stringify({branch:'main',sha:file.sha,message:'Publish ledger summary for '+month,content})
@@ -339,12 +374,14 @@ async function init(){
   $('publishToken').value='';
   if(!$('year').checkValidity()||!token){status.textContent='請填寫有效年份和權杖。';return}
   const month=monthKey(),values=totals(month);
-  if(!confirm('發布 '+month+' 月報？\n'+describe(values)))return;
+  const details=detailMonth===month?selectedDetails():[];
+  const preview=details.map(item=>item.date+' '+(item.kind==='income'?'收入':'支出')+' '+item.category+' '+money(Math.round(item.amount*100))).join('\n');
+  if(!confirm('發布 '+month+' 月報？\n'+describe(values)+'\n公開明細 '+details.length+' 筆'+(preview?'\n'+preview:'')))return;
   const button=event.submitter;
   button.disabled=true;
   try{
    status.textContent='正在更新 GitHub 月報…';
-   await publishMonth(token,month,values);
+   await publishMonth(token,month,values,details);
    status.textContent='已更新 GitHub 月報。家長頁將在 Pages 部署完成後顯示。';
   }catch(error){status.textContent=error.message}
   finally{button.disabled=false}
@@ -353,7 +390,7 @@ async function init(){
   const month=monthKey();
   const input=$('existing').files[0];
   const reports=input?JSON.parse(await input.text()).reports:[];
-  jsonFile('ledger-summary.json',mergeReport(reports,month,totals(month)));
+  jsonFile('ledger-summary.json',mergeReport(reports,month,totals(month),detailMonth===month?selectedDetails():[]));
  });
 }
 init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。'));
