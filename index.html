@@ -5,9 +5,11 @@
 <title>萬年曆帳本｜西松高中自由車隊</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#edf3f3;color:#153438;font:1rem system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:1rem}header,section{padding:1rem 1.25rem;border-radius:14px;margin-bottom:1rem;background:white}header{background:#153438;color:white}h1,h2{margin:.3rem 0 .8rem}label{display:inline-grid;gap:.25rem;margin:.25rem .5rem .25rem 0}button,input,select{font:inherit;padding:.45rem;border:1px solid #7d9595;border-radius:6px}button{background:#f4f8f8;cursor:pointer}button[aria-pressed=true],.primary{background:#146b60;color:white}#days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.25rem;text-align:center}#days button{min-height:2.4rem;padding:.15rem}#totals{line-height:1.8}.row{padding:.75rem 0;border-top:1px solid #c8d6d6}.row strong{display:block;margin-bottom:.35rem;overflow-wrap:anywhere}.row button{margin:.2rem}#status{min-height:1.4em}#backup{margin:.3rem 0}
-</style>
+nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}</style>
 <main>
 <header><h1>西松高中自由車隊｜萬年曆帳本</h1><p>收支與憑證儲存在目前瀏覽器。清除網站資料或換裝置前，請下載完整備份。</p></header>
+<nav aria-label="工作站功能"><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
+<div id="ledger">
 <section>
 <h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
 <div id="days" aria-label="月曆"></div><p id="totals"></p><p id="annual"></p>
@@ -32,7 +34,14 @@
 <label>合併既有家長月報（選填）<input id="existing" type="file" accept=".json,application/json"></label>
 <button id="summary">下載本月家長摘要</button>
 <p>摘要檔只含月度金額。合併既有檔案可保留其他月份。下載後可上傳至家長版儲存庫的 ledger-summary.json。</p>
-</section></main>
+<hr>
+<h3>發布月報到家長頁</h3>
+<p>確認後只發布所選月份的期初、收入、支出和期末金額。首次請在 GitHub 建立限定 <code>xisong-cycling-parent</code> 的細粒度權杖，設定 <strong>Contents: Read and write</strong>。權杖每次用完清除。</p>
+<p><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">建立 GitHub 發布權杖</a></p>
+<form id="publish"><label>GitHub 發布權杖<input id="publishToken" type="password" required autocomplete="off" spellcheck="false"></label><button class="primary">發布所選月份</button></form>
+<p id="publishStatus" role="status"></p>
+</section></div>
+<section id="races" hidden><h2 id="raceTitle"></h2><div id="raceList" role="status"></div></section></main>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -171,6 +180,89 @@ function validRow(row){
     /^data:(image\/jpeg|image\/png|application\/pdf);base64,[A-Za-z0-9+/=]+$/.test(row.receipt) &&
     row.receipt.length<=Math.ceil(sizeLimit/3)*4+64));
 }
+const parentSite='https://ahi0128.github.io/xisong-cycling-parent/';
+const raceViews={team:['車隊參賽','team-races.json'],domestic:['國內賽事','races.json']};
+let activeView='ledger';
+let raceRequest=0;
+async function switchView(view){
+ activeView=view;
+ const current=++raceRequest;
+ for(const control of document.querySelectorAll('[data-view]')){
+  control.setAttribute('aria-pressed',String(control.dataset.view===view));
+ }
+ $('ledger').hidden=view!=='ledger';
+ $('races').hidden=view==='ledger';
+ if(view==='ledger')return;
+ const [title,path]=raceViews[view];
+ const panel=$('raceList');
+ $('raceTitle').textContent=title;
+ panel.textContent='載入中…';
+ try{
+  const response=await fetch(parentSite+path,{cache:'no-store'});
+  if(!response.ok)throw new Error();
+  const {events}=await response.json();
+  if(current!==raceRequest||activeView!==view)return;
+  const upcoming=events.filter(event=>(event.end||event.start)>=today)
+   .sort((a,b)=>a.start.localeCompare(b.start));
+  if(!upcoming.length){panel.textContent='目前沒有已公告的即將舉行賽事。';return}
+  const table=document.createElement('table');
+  const head=table.createTHead().insertRow();
+  for(const title of ['比賽日期','賽事','地點','報名期限','連結']){
+   const th=document.createElement('th');th.scope='col';th.textContent=title;head.append(th);
+  }
+  const body=table.createTBody();
+  for(const event of upcoming){
+   const row=body.insertRow();
+   row.insertCell().textContent=event.displayDate||(event.end&&event.end!==event.start?event.start+' 至 '+event.end:event.start);
+   row.insertCell().textContent=[event.title,event.discipline,event.status].filter(Boolean).join(' · ');
+   row.insertCell().textContent=event.venue||'待公告';
+   const deadline=event.registrationDeadline;
+   row.insertCell().textContent=[deadline&&deadline+(deadline<today?'（已截止）':''),event.registrationNote].filter(Boolean).join(' · ')||'待公告';
+   const links=row.insertCell();
+   for(const [url,label] of [[event.registrationUrl,'報名'],[event.source,'公告']]){
+    if(typeof url!=='string'||!/^https?:\/\//i.test(url))continue;
+    const link=document.createElement('a');link.href=url;link.textContent=label;
+    link.target='_blank';link.rel='noopener noreferrer';links.append(link);
+   }
+  }
+  panel.replaceChildren(table);
+ }catch{
+  if(current===raceRequest)panel.textContent='暫時無法載入賽事。請再點一次此分頁重試。';
+ }
+}
+for(const control of document.querySelectorAll('[data-view]')){
+ control.addEventListener('click',()=>switchView(control.dataset.view));
+}
+const summaryKeys=['opening','income','expense','closing'];
+function mergeReport(reports,month,values){
+ if(!Array.isArray(reports)||!reports.every(row=>row&&/^\d{4}-(0[1-9]|1[0-2])$/.test(row.month)&&summaryKeys.every(key=>typeof row[key]==='number'&&Number.isFinite(row[key])))){
+  throw new Error('家長月報格式不符，原有資料已保留。');
+ }
+ const clean=reports.filter(row=>row.month!==month).map(row=>({
+  month:row.month,...Object.fromEntries(summaryKeys.map(key=>[key,row[key]]))
+ }));
+ clean.push({month,...Object.fromEntries(summaryKeys.map(key=>[key,values[key]/100]))});
+ clean.sort((a,b)=>a.month.localeCompare(b.month));
+ return {year:Number(clean.at(-1).month.slice(0,4)),reports:clean};
+}
+async function publishMonth(token,month,values){
+ const endpoint='https://api.github.com/repos/ahi0128/xisong-cycling-parent/contents/ledger-summary.json';
+ const headers={Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
+ const current=await fetch(endpoint+'?ref=main',{headers,cache:'no-store',redirect:'error'});
+ if(!current.ok)throw new Error('無法讀取 GitHub 月報（'+current.status+'）。請確認權杖及儲存庫權限。');
+ const file=await current.json();
+ if(file.encoding!=='base64'||!file.sha)throw new Error('無法驗證現有月報版本。');
+ const source=new TextDecoder().decode(Uint8Array.from(atob(file.content),character=>character.charCodeAt(0)));
+ const content=btoa(JSON.stringify(mergeReport(JSON.parse(source).reports,month,values),null,2)+'\n');
+ const result=await fetch(endpoint,{
+  method:'PUT',headers:{...headers,'Content-Type':'application/json'},redirect:'error',
+  body:JSON.stringify({branch:'main',sha:file.sha,message:'Publish ledger summary for '+month,content})
+ });
+ if(result.status===409)throw new Error('同時有人更新了月報，請重新發布以合併最新資料。');
+ if(!result.ok)throw new Error('GitHub 拒絕發布（'+result.status+'）。請確認 Contents 有寫入權限。');
+ const update=await result.json();
+ return update.commit.sha;
+}
 async function init(){
  state=await storage('readonly',store=>store.get('data'))||state;
  for(let m=1;m<=12;m++)$('month').add(new Option(m+' 月',m));
@@ -211,18 +303,28 @@ async function init(){
    await save({opening:data.opening,rows:data.rows});reset(today);render();feedback('已還原。');
   }finally{$('restore').value=''}
  });
+ $('publish').addEventListener('submit',async event=>{
+  event.preventDefault();
+  const status=$('publishStatus');
+  const token=$('publishToken').value.trim();
+  $('publishToken').value='';
+  if(!$('year').checkValidity()||!token){status.textContent='請填寫有效年份和權杖。';return}
+  const month=monthKey(),values=totals(month);
+  if(!confirm('發布 '+month+' 月報？\n'+describe(values)))return;
+  const button=event.submitter;
+  button.disabled=true;
+  try{
+   status.textContent='正在更新 GitHub 月報…';
+   await publishMonth(token,month,values);
+   status.textContent='已更新 GitHub 月報。家長頁將在 Pages 部署完成後顯示。';
+  }catch(error){status.textContent=error.message}
+  finally{button.disabled=false}
+ });
  operation('summary','click',async()=>{
   const month=monthKey();
   const input=$('existing').files[0];
   const reports=input?JSON.parse(await input.text()).reports:[];
-  const keys=['opening','income','expense','closing'];
-  if(!Array.isArray(reports)||!reports.every(row=>row&&/^\d{4}-(0[1-9]|1[0-2])$/.test(row.month)&&keys.every(key=>typeof row[key]==='number'&&Number.isFinite(row[key]))))
-   throw new Error('家長月報格式不符。');
-  const clean=reports.filter(row=>row.month!==month).map(row=>({month:row.month,...Object.fromEntries(keys.map(key=>[key,row[key]]))}));
-  const values=totals(month);
-  clean.push({month,...Object.fromEntries(keys.map(key=>[key,values[key]/100]))});
-  clean.sort((a,b)=>a.month.localeCompare(b.month));
-  jsonFile('ledger-summary.json',{year:Number(month.slice(0,4)),reports:clean});
+  jsonFile('ledger-summary.json',mergeReport(reports,month,totals(month)));
  });
 }
 init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。'));
