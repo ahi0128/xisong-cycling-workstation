@@ -31,16 +31,17 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <button type="button" id="backup">備份帳本</button>
 <button type="button" id="openPublish" class="primary" aria-controls="publishPanel" aria-expanded="false">發布月報</button>
 </div>
-<p>備份會下載收支與憑證。家長月報顯示每月總額與餘額，也可選擇附上交易明細。</p>
+<p>備份會下載收支與憑證。家長月報包含每月總額、餘額和交易明細。</p>
 <div id="autoBar" hidden><p id="autoStatus" role="status"></p><button type="button" id="stopAuto">停止自動同步</button></div>
 <p id="toolStatus" role="status" hidden></p>
 <div id="publishPanel" hidden>
 <h3 id="publishHeading">發布月報到家長頁</h3>
 <p id="publishPreview"></p><p id="publicDetails"></p>
-<form id="publish"><label>GitHub 發布權杖<input id="publishToken" type="password" required autocomplete="off" spellcheck="false"></label><button class="primary">發布一次</button> <button type="submit" id="enableAuto">啟用本次自動同步</button></form>
+<form id="publish"><label>GitHub 發布權杖<input id="publishToken" type="password" autocomplete="off" spellcheck="false"></label><button class="primary">發布一次</button> <button type="submit" id="enableAuto">啟用本次自動同步</button></form>
+<p id="tokenStatus" role="status"></p><button id="forgetToken" type="button" hidden>清除本分頁權杖</button>
 <p id="publishStatus" role="status"></p>
 <details><summary>如何取得發布權杖？</summary>
-<p>在 GitHub 建立細粒度權杖，選擇 <code>xisong-cycling-parent</code>，並將 <strong>Contents</strong> 設為 <strong>Read and write</strong>。輸入後可發布一次，或讓這個分頁在開啟期間自動同步所選月份。重新整理或關閉分頁後，須重新授權。</p>
+<p>在 GitHub 建立細粒度權杖，選擇 <code>xisong-cycling-parent</code>，並將 <strong>Contents</strong> 設為 <strong>Read and write</strong>。同一個分頁貼一次即可重複使用。重新整理或關閉分頁後，須重新輸入。</p>
 <p><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">到 GitHub 建立發布權杖</a></p>
 </details>
 </div>
@@ -266,6 +267,12 @@ for(const control of document.querySelectorAll('[data-view]')){
  control.addEventListener('click',()=>switchView(control.dataset.view));
 }
 const publicCategories={income:['隊費','補助','捐款','其他收入'],expense:['教練費','報名費','交通費','隊車油料','車輛維護','器材費','補給飲水','行政費','其他支出']};
+let rememberedToken='';
+function rememberToken(token){
+ rememberedToken=token;
+ $('forgetToken').hidden=!token;
+ $('tokenStatus').textContent=token?'此分頁已記住權杖，下次可直接發布。':'本分頁尚未記住權杖。';
+}
 let autoSession=null;
 let autoTimer;
 function queueAuto(){
@@ -463,6 +470,15 @@ async function init(){
    await save({opening:data.opening,rows:data.rows,dues:data.dues||{}});reset(today);render();feedback('已還原帳本。','toolStatus');
   }finally{$('restore').value=''}
  });
+ rememberToken('');
+ $('forgetToken').onclick=()=>{
+  if(autoSession||$('publish').dataset.busy){
+   $('tokenStatus').textContent='請先停止自動同步或等本次發布完成，再清除權杖。';
+   return;
+  }
+  $('publishToken').value='';
+  rememberToken('');
+ };
  $('stopAuto').onclick=()=>{
   if(autoSession?.busy){$('publishStatus').textContent='請等本次同步完成，再停止。';return}
   clearTimeout(autoTimer);
@@ -477,13 +493,14 @@ async function init(){
   if($('publish').dataset.busy)return;
   if(autoSession){status.textContent='請先停止目前的自動同步。';return}
   const enable=event.submitter?.id==='enableAuto';
-  const token=$('publishToken').value.trim();
+  const token=$('publishToken').value.trim()||rememberedToken;
   $('publishToken').value='';
   if(!$('year').checkValidity()||!token){status.textContent='請填寫有效年份和權杖。';return}
   const month=monthKey(),values=totals(month);
   const details=publicDetailsFor(month);
   
   if(!confirm((enable?'啟用 '+month+' 的自動同步？儲存後會更新此月報。':'發布 '+month+' 月報？')+'\n'+describe(values)+'\n公開明細 '+details.length+' 筆'))return;
+  rememberToken(token);
   if(enable){
    autoSession={token,month,last:null};
    $('autoBar').hidden=false;
