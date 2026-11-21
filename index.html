@@ -8,7 +8,7 @@
 nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}</style>
 <main>
 <header><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1><p>收支與憑證儲存在目前瀏覽器。清除網站資料或換裝置前，請下載完整備份。</p></header>
-<nav aria-label="工作站功能"><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
+<nav aria-label="工作站功能"><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
 <div id="ledger">
 <section>
 <h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
@@ -36,7 +36,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <p id="toolStatus" role="status" hidden></p>
 <div id="publishPanel" hidden>
 <h3 id="publishHeading">發布月報到家長頁</h3>
-<p id="publishPreview"></p><details open><summary>選擇要公開的交易明細（選填）</summary><p>為每筆要公開的交易選擇用途，例如隊費、報名費或交通費。若全部保留「不公開此筆」，家長只會看到月報總額。</p><div id="publicDetails"></div></details>
+<p id="publishPreview"></p><details open><summary>本月公開明細</summary><p>預設列出每筆的日期、類型、用途和金額。系統依常見品名帶入用途，其餘標成「其他收入」或「其他支出」。可以更改分類或選擇不公開該筆。</p><div id="publicDetails"></div></details>
 <form id="publish"><label>GitHub 發布權杖<input id="publishToken" type="password" required autocomplete="off" spellcheck="false"></label><button class="primary">發布一次</button> <button type="submit" id="enableAuto">啟用本次自動同步</button></form>
 <p id="publishStatus" role="status"></p>
 <details><summary>如何取得發布權杖？</summary>
@@ -59,7 +59,15 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <p>要手動發布，可用下載的摘要取代家長版儲存庫的 <code>ledger-summary.json</code>。</p>
 </details>
 </section></div>
-<section id="races" hidden><h2 id="raceTitle"></h2><div id="raceList" role="status"></div></section></main>
+<section id="dues" hidden>
+<h2>每月隊費繳納清單</h2>
+<label>繳費月份<input id="duesMonth" type="month" required></label>
+<p id="duesTotals"></p>
+<form id="duesAdd"><label>學生姓名或代號<input id="duesName" required maxlength="60"></label><button>加入本月清單</button></form>
+<button type="button" id="copyDues">帶入前一月名單</button>
+<p>每人每月 2,500 元。勾選已繳只更新管理清單；實收款請在收支帳本登錄一次。清單存在目前的瀏覽器，會隨完整備份保存。</p>
+<p id="duesStatus" role="status"></p><div id="duesRows"></div>
+</section><section id="races" hidden><h2 id="raceTitle"></h2><div id="raceList" role="status"></div></section></main>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -213,7 +221,9 @@ async function switchView(view){
   control.setAttribute('aria-pressed',String(control.dataset.view===view));
  }
  $('ledger').hidden=view!=='ledger';
- $('races').hidden=view==='ledger';
+ $('dues').hidden=view!=='dues';
+ $('races').hidden=view==='ledger'||view==='dues';
+ if(view==='dues'){renderDues();return}
  if(view==='ledger')return;
  const [title,path]=raceViews[view];
  const panel=$('raceList');
@@ -268,9 +278,7 @@ async function syncAuto(session){
  if(autoSession!==session)return;
  if(session.busy){session.pending=true;return}
  const values=totals(session.month);
- const details=state.rows.filter(row=>row.date.startsWith(session.month+'-')&&session.categories.has(row.id))
-  .map(row=>({date:row.date,kind:row.kind,amount:row.amount/100,category:session.categories.get(row.id)}));
- const allowed=cleanPublicDetails(details,session.month);
+ const allowed=publicDetailsFor(session.month);
  const current=JSON.stringify([values,allowed]);
  if(current===session.last)return;
  session.busy=true;
@@ -287,13 +295,22 @@ async function syncAuto(session){
   if(session.pending&&autoSession===session){session.pending=false;queueAuto()}
  }
 }
-let detailMonth='';
-let detailRows=[];
+
+function publicCategory(row){
+ if(row.publicCategory==='')return '';
+ if(publicCategories[row.kind].includes(row.publicCategory))return row.publicCategory;
+ const matches=row.kind==='income'
+  ? [[/隊費/,'隊費'],[/補助/,'補助'],[/捐款/,'捐款']]
+  : [[/教練/,'教練費'],[/報名/,'報名費'],[/油料|加油|汽油/,'隊車油料'],[/車輛維護|保養|耗損/,'車輛維護'],[/交通|車資|停車|租車/,'交通費'],[/飲水|補給|麵包|餐費/,'補給飲水'],[/器材|設備/,'器材費'],[/行政/,'行政費']];
+ return matches.find(([pattern])=>pattern.test(row.title))?.[1] || (row.kind==='income'?'其他收入':'其他支出');
+}
+function publicDetailsFor(month){
+ return cleanPublicDetails(state.rows.filter(row=>row.date.startsWith(month+'-'))
+  .map(row=>({date:row.date,kind:row.kind,category:publicCategory(row),amount:row.amount/100})),month)
+  .sort((a,b)=>a.date.localeCompare(b.date));
+}
 function renderPublicDetails(month){
  const panel=$('publicDetails');
- const previous=month===detailMonth?new Map(detailRows.map(({row,select})=>[row.id,select.value])):new Map();
- detailMonth=month;
- detailRows=[];
  panel.replaceChildren();
  for(const row of state.rows.filter(row=>row.date.startsWith(month+'-')).sort((a,b)=>a.date.localeCompare(b.date))){
   const label=document.createElement('label');
@@ -301,17 +318,19 @@ function renderPublicDetails(month){
   label.textContent=row.date+' ｜ '+(row.kind==='income'?'收入':'支出')+' ｜ '+row.title+' ｜ '+money(row.amount);
   select.add(new Option('不公開此筆',''));
   for(const category of publicCategories[row.kind])select.add(new Option(category,category));
-  select.value=previous.get(row.id)||'';
-  label.append(select);
-  panel.append(label);
-  detailRows.push({row,select});
+  select.value=publicCategory(row);
+  select.onchange=async()=>{
+   try{
+    await save({...state,rows:state.rows.map(item=>item.id===row.id?{...item,publicCategory:select.value}:item)});
+    $('publishStatus').textContent='已儲存公開用途。';
+   }catch(error){
+    select.value=publicCategory(row);
+    $('publishStatus').textContent='無法儲存公開用途。';
+   }
+  };
+  label.append(select);panel.append(label);
  }
- if(!detailRows.length)panel.textContent='這個月沒有交易紀錄。';
-}
-function selectedDetails(){
- return detailRows.filter(({select})=>select.value).map(({row,select})=>({
-  date:row.date,kind:row.kind,category:select.value,amount:row.amount/100
- }));
+ if(!panel.children.length)panel.textContent='這個月沒有交易紀錄。';
 }
 function cleanPublicDetails(details,month){
  if(!Array.isArray(details))return [];
@@ -350,6 +369,69 @@ async function publishMonth(token,month,values,details){
  const update=await result.json();
  return update.commit.sha;
 }
+const monthlyDues=250000;
+function duesMonth(){return $('duesMonth').value}
+function validDuesMonth(month){return /^\d{4}-(0[1-9]|1[0-2])$/.test(month)}
+function duesList(month=duesMonth()){return state.dues?.[month]||[]}
+function validDues(data){
+ return data===undefined||(data&&typeof data==='object'&&!Array.isArray(data)&&Object.entries(data).every(([month,items])=>
+  validDuesMonth(month)&&Array.isArray(items)&&items.every(item=>item&&typeof item.name==='string'&&item.name.trim()&&item.name.length<=60&&
+   typeof item.paid==='boolean')&&new Set(items.map(item=>item.name)).size===items.length));
+}
+function renderDues(){
+ const items=duesList();
+ const paid=items.filter(item=>item.paid).length;
+ $('duesTotals').textContent='已繳 '+paid+' 人（'+money(paid*monthlyDues)+'）｜未繳 '+(items.length-paid)+' 人（'+money((items.length-paid)*monthlyDues)+'）';
+ const list=$('duesRows');
+ list.replaceChildren();
+ for(const item of items){
+  const line=document.createElement('div');
+  line.className='row';
+  line.append(document.createTextNode(item.name+' ｜ '+(item.paid?'已繳':'未繳')+' '));
+  line.append(button(item.paid?'改為未繳':'標記已繳',()=>updateDues(duesList().map(entry=>entry.name===item.name?{...entry,paid:!entry.paid}:entry))));
+  line.append(button('移出本月',()=>{
+   if(confirm('將 '+item.name+' 移出本月清單？'))return updateDues(duesList().filter(entry=>entry.name!==item.name));
+  }));
+  list.append(line);
+ }
+ if(!items.length)list.textContent='本月尚未加入學生。';
+}
+async function updateDues(items){
+ const month=duesMonth();
+ const status=$('duesStatus');
+ if(!validDuesMonth(month)){status.textContent='請選擇有效月份。';return false}
+ try{
+  await save({...state,dues:{...state.dues,[month]:items}});
+  renderDues();
+  status.textContent='已儲存繳納清單。';
+  return true;
+ }catch{
+  status.textContent='儲存繳納清單失敗。';
+  return false;
+ }
+}
+function initDues(){
+ $('duesMonth').value=today.slice(0,7);
+ $('duesMonth').onchange=()=>{$('duesStatus').textContent='';renderDues()};
+ $('duesAdd').onsubmit=async event=>{
+  event.preventDefault();
+  const name=$('duesName').value.trim();
+  if(!name||duesList().some(item=>item.name===name)){
+   $('duesStatus').textContent='請輸入尚未加入本月的姓名或代號。';return;
+  }
+  if(await updateDues([...duesList(),{name,paid:false}]))$('duesName').value='';
+ };
+ $('copyDues').onclick=()=>{
+  const month=duesMonth();
+  if(!validDuesMonth(month))return;
+  const previous=new Date(month+'-01T00:00:00Z');
+  previous.setUTCMonth(previous.getUTCMonth()-1);
+  const current=duesList();
+  const additions=duesList(previous.toISOString().slice(0,7)).filter(item=>!current.some(entry=>entry.name===item.name));
+  if(!additions.length){$('duesStatus').textContent='前一月沒有可補入的名單。';return}
+  return updateDues([...current,...additions.map(({name})=>({name,paid:false}))]);
+ };
+}
 async function init(){
  $('openPublish').onclick=()=>{
   const panel=$('publishPanel');
@@ -359,6 +441,7 @@ async function init(){
   else $('publishHeading').scrollIntoView({block:'nearest'});
  };
  state=await storage('readonly',store=>store.get('data'))||state;
+ initDues();
  for(let m=1;m<=12;m++)$('month').add(new Option(m+' 月',m));
  reset(today);render();
  for(const id of ['year','month'])$(id).onchange=()=>{
@@ -375,7 +458,8 @@ async function init(){
    id:editing?.id||crypto.randomUUID(),date,kind:$('kind').value,title:$('title').value.trim(),
    amount:Math.round(Number($('amount').value)*100),note:$('note').value,
    receipt:file?await readReceipt(file):editing?.receipt||null,
-   receiptName:file?.name||editing?.receiptName||null
+   receiptName:file?.name||editing?.receiptName||null,
+   ...((editing?.publicCategory===''||(editing?.kind===$('kind').value&&editing.publicCategory!==undefined))?{publicCategory:editing.publicCategory}:{})
   };
   await save({...state,rows:[...state.rows.filter(other=>other.id!==row.id),row]});
   reset(date);render();feedback('已儲存。');
@@ -394,10 +478,10 @@ async function init(){
   try{
    const data=JSON.parse(await file.text());
    if(data.version!==1||!Number.isSafeInteger(data.opening)||Math.abs(data.opening)>10000000000||
-      !Array.isArray(data.rows)||!data.rows.every(validRow)||
+      !Array.isArray(data.rows)||!data.rows.every(validRow)||!validDues(data.dues)||
       new Set(data.rows.map(row=>row.id)).size!==data.rows.length)throw new Error('備份格式不符。');
    if(!confirm('以備份取代本瀏覽器中的帳本？'))return;
-   await save({opening:data.opening,rows:data.rows});reset(today);render();feedback('已還原帳本。','toolStatus');
+   await save({opening:data.opening,rows:data.rows,dues:data.dues||{}});reset(today);render();feedback('已還原帳本。','toolStatus');
   }finally{$('restore').value=''}
  });
  $('stopAuto').onclick=()=>{
@@ -418,14 +502,14 @@ async function init(){
   $('publishToken').value='';
   if(!$('year').checkValidity()||!token){status.textContent='請填寫有效年份和權杖。';return}
   const month=monthKey(),values=totals(month);
-  const details=detailMonth===month?selectedDetails():[];
+  const details=publicDetailsFor(month);
   const preview=details.map(item=>item.date+' '+(item.kind==='income'?'收入':'支出')+' '+item.category+' '+money(Math.round(item.amount*100))).join('\n');
   if(!confirm((enable?'啟用 '+month+' 的自動同步？儲存後會更新此月報。':'發布 '+month+' 月報？')+'\n'+describe(values)+'\n公開明細 '+details.length+' 筆'+(preview?'\n'+preview:'')))return;
   if(enable){
-   autoSession={token,month,categories:new Map(detailRows.filter(({select})=>select.value).map(({row,select})=>[row.id,select.value])),last:null};
+   autoSession={token,month,last:null};
    $('autoBar').hidden=false;
    $('stopAuto').hidden=false;
-   status.textContent='已啟用。新增交易只更新月度總額。要調整公開明細，請停止後重新選擇。';
+   status.textContent='已啟用。儲存交易或變更公開用途時，會更新所選月份的月報。';
    await syncAuto(autoSession);
    return;
   }
@@ -443,7 +527,7 @@ async function init(){
   const month=monthKey();
   const input=$('existing').files[0];
   const reports=input?JSON.parse(await input.text()).reports:[];
-  jsonFile('ledger-summary.json',mergeReport(reports,month,totals(month),detailMonth===month?selectedDetails():[]));
+  jsonFile('ledger-summary.json',mergeReport(reports,month,totals(month),publicDetailsFor(month)));
  });
 }
 init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。'));
