@@ -312,17 +312,17 @@ function publicCategory(row){
 }
 function publicDetailsFor(month){
  return cleanPublicDetails(state.rows.filter(row=>row.date.startsWith(month+'-'))
-  .map(row=>({date:row.date,kind:row.kind,category:publicCategory(row),amount:row.amount/100})),month)
+  .map(row=>({date:row.date,kind:row.kind,category:publicCategory(row),amount:row.amount/100,note:row.note})),month)
   .sort((a,b)=>a.date.localeCompare(b.date));
 }
 function renderPublicDetails(month){
- $('publicDetails').textContent='本月 '+publicDetailsFor(month).length+' 筆收支會隨月報公開。';
+ $('publicDetails').textContent='本月 '+publicDetailsFor(month).length+' 筆收支會隨月報公開，包含帳本備註。';
 }
 function cleanPublicDetails(details,month){
  if(!Array.isArray(details))return [];
  return details.filter(item=>item&&validDate(item.date)&&item.date.startsWith(month+'-')&&
   Object.hasOwn(publicCategories,item.kind)&&publicCategories[item.kind].includes(item.category)&&
-  Number.isFinite(item.amount)&&item.amount>0).map(({date,kind,category,amount})=>({date,kind,category,amount}));
+  Number.isFinite(item.amount)&&item.amount>0).map(({date,kind,category,amount,note})=>({date,kind,category,amount,note:typeof note==='string'?note.slice(0,400):''}));
 }
 const summaryKeys=['opening','income','expense','closing'];
 function mergeReport(reports,month,values,details=[]){
