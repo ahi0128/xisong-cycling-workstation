@@ -32,14 +32,15 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <button type="button" id="openPublish" class="primary" aria-controls="publishPanel" aria-expanded="false">發布月報</button>
 </div>
 <p>備份會下載收支與憑證。家長月報顯示每月總額與餘額，也可選擇附上交易明細。</p>
+<div id="autoBar" hidden><p id="autoStatus" role="status"></p><button type="button" id="stopAuto">停止自動同步</button></div>
 <p id="toolStatus" role="status" hidden></p>
 <div id="publishPanel" hidden>
 <h3 id="publishHeading">發布月報到家長頁</h3>
 <p id="publishPreview"></p><details><summary>選擇要公開的交易明細（選填）</summary><p>為要公開的交易選擇用途。家長只會看到日期、收支類型、公開用途和金額。</p><div id="publicDetails"></div></details>
-<form id="publish"><label>GitHub 發布權杖<input id="publishToken" type="password" required autocomplete="off" spellcheck="false"></label><button class="primary">確認發布</button></form>
+<form id="publish"><label>GitHub 發布權杖<input id="publishToken" type="password" required autocomplete="off" spellcheck="false"></label><button class="primary">發布一次</button> <button type="submit" id="enableAuto">啟用本次自動同步</button></form>
 <p id="publishStatus" role="status"></p>
 <details><summary>如何取得發布權杖？</summary>
-<p>在 GitHub 建立細粒度權杖，選擇 <code>xisong-cycling-parent</code>，並將 <strong>Contents</strong> 設為 <strong>Read and write</strong>。每次發布後會清除輸入。</p>
+<p>在 GitHub 建立細粒度權杖，選擇 <code>xisong-cycling-parent</code>，並將 <strong>Contents</strong> 設為 <strong>Read and write</strong>。輸入後可發布一次，或讓這個分頁在開啟期間自動同步所選月份。重新整理或關閉分頁後，須重新授權。</p>
 <p><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">到 GitHub 建立發布權杖</a></p>
 </details>
 </div>
@@ -87,6 +88,7 @@ async function storage(mode, operation){
 async function save(next){
  await storage('readwrite',store=>store.put(next,'data'));
  state=next;
+ queueAuto();
 }
 function totals(prefix){
  let opening=state.opening, income=0, expense=0;
@@ -254,6 +256,37 @@ for(const control of document.querySelectorAll('[data-view]')){
  control.addEventListener('click',()=>switchView(control.dataset.view));
 }
 const publicCategories={income:['隊費','補助','捐款','其他收入'],expense:['教練費','報名費','交通費','隊車油料','車輛維護','器材費','補給飲水','行政費','其他支出']};
+let autoSession=null;
+let autoTimer;
+function queueAuto(){
+ const session=autoSession;
+ if(!session)return;
+ clearTimeout(autoTimer);
+ autoTimer=setTimeout(()=>syncAuto(session),900);
+}
+async function syncAuto(session){
+ if(autoSession!==session)return;
+ if(session.busy){session.pending=true;return}
+ const values=totals(session.month);
+ const details=state.rows.filter(row=>row.date.startsWith(session.month+'-')&&session.categories.has(row.id))
+  .map(row=>({date:row.date,kind:row.kind,amount:row.amount/100,category:session.categories.get(row.id)}));
+ const allowed=cleanPublicDetails(details,session.month);
+ const current=JSON.stringify([values,allowed]);
+ if(current===session.last)return;
+ session.busy=true;
+ const status=$('autoStatus');
+ status.textContent=session.month+' 月報同步中…';
+ try{
+  await publishMonth(session.token,session.month,values,allowed);
+  session.last=current;
+  if(autoSession===session)status.textContent=session.month+' 已同步到 GitHub。家長頁會在部署後更新。';
+ }catch(error){
+  if(autoSession===session)status.textContent=session.month+' 同步失敗。'+error.message+' 可停止後重新啟用。';
+ }finally{
+  session.busy=false;
+  if(session.pending&&autoSession===session){session.pending=false;queueAuto()}
+ }
+}
 let detailMonth='';
 let detailRows=[];
 function renderPublicDetails(month){
@@ -367,24 +400,44 @@ async function init(){
    await save({opening:data.opening,rows:data.rows});reset(today);render();feedback('已還原帳本。','toolStatus');
   }finally{$('restore').value=''}
  });
+ $('stopAuto').onclick=()=>{
+  if(autoSession?.busy){$('publishStatus').textContent='請等本次同步完成，再停止。';return}
+  clearTimeout(autoTimer);
+  autoSession=null;
+  $('autoStatus').textContent='已停止自動同步。';
+  $('publishStatus').textContent='';
+  $('stopAuto').hidden=true;
+ };
  $('publish').addEventListener('submit',async event=>{
   event.preventDefault();
   const status=$('publishStatus');
+  if($('publish').dataset.busy)return;
+  if(autoSession){status.textContent='請先停止目前的自動同步。';return}
+  const enable=event.submitter?.id==='enableAuto';
   const token=$('publishToken').value.trim();
   $('publishToken').value='';
   if(!$('year').checkValidity()||!token){status.textContent='請填寫有效年份和權杖。';return}
   const month=monthKey(),values=totals(month);
   const details=detailMonth===month?selectedDetails():[];
   const preview=details.map(item=>item.date+' '+(item.kind==='income'?'收入':'支出')+' '+item.category+' '+money(Math.round(item.amount*100))).join('\n');
-  if(!confirm('發布 '+month+' 月報？\n'+describe(values)+'\n公開明細 '+details.length+' 筆'+(preview?'\n'+preview:'')))return;
+  if(!confirm((enable?'啟用 '+month+' 的自動同步？儲存後會更新此月報。':'發布 '+month+' 月報？')+'\n'+describe(values)+'\n公開明細 '+details.length+' 筆'+(preview?'\n'+preview:'')))return;
+  if(enable){
+   autoSession={token,month,categories:new Map(detailRows.filter(({select})=>select.value).map(({row,select})=>[row.id,select.value])),last:null};
+   $('autoBar').hidden=false;
+   $('stopAuto').hidden=false;
+   status.textContent='已啟用。新增交易只更新月度總額。要調整公開明細，請停止後重新選擇。';
+   await syncAuto(autoSession);
+   return;
+  }
   const button=event.submitter;
   button.disabled=true;
+  $('publish').dataset.busy='true';
   try{
    status.textContent='正在更新 GitHub 月報…';
    await publishMonth(token,month,values,details);
    status.textContent='已更新 GitHub 月報。家長頁將在 Pages 部署完成後顯示。';
   }catch(error){status.textContent=error.message}
-  finally{button.disabled=false}
+  finally{button.disabled=false;delete $('publish').dataset.busy}
  });
  operation('summary','click',async()=>{
   const month=monthKey();
