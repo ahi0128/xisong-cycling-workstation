@@ -8,6 +8,9 @@
 <style>
 main{max-width:850px;margin:auto;padding:20px}section+section{margin-top:14px}.amount{font-size:clamp(27px,5vw,42px);font-weight:800;color:#b3f7da;margin-top:12px}.hero a{color:#b3f7da}.actions{margin-top:12px}td:last-child,th:last-child{text-align:right;min-width:100px}td,th{padding:9px}p{margin:8px 0}article{margin-top:14px}@media print{@page{size:A4;margin:12mm}body,main{background:white;margin:0;padding:0;font-size:12px}h1{font-size:25px}h2{font-size:16px}.hero{padding:10px;background:white;color:#10292e;border:1px solid #aaa}.hero p,.amount{color:#10292e}.hero:after,.actions{display:none}.amount{font-size:24px}.card{padding:8px;break-inside:avoid}td,th{padding:5px}p{line-height:1.4}.tablewrap{overflow:visible}section+section{margin-top:7px}}
 </style>
+<link rel="manifest" href="./app.webmanifest">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="theme-color" content="#10282e">
 </head>
 <body>
 <main>
@@ -43,5 +46,6 @@ main{max-width:850px;margin:auto;padding:20px}section+section{margin-top:14px}.a
 <p class="hint">本頁供家長討論。隊費金額、收款主體、繳納方式及相關程序待校方與家長確認後另行通知。</p>
 </section>
 </main>
+<script>if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(console.error);</script>
 </body>
 </html>
