@@ -31,7 +31,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <button type="button" id="backup">備份帳本</button>
 <button type="submit" form="publish" id="openPublish" class="primary">發布月報</button>
 </div>
-<p>備份會下載收支與憑證。家長月報包含每月總額、餘額和交易明細。</p>
+<p>備份會下載收支與憑證。發布後，此分頁會自動同步該月份的收支明細與備註。關閉或重新整理分頁後，請再發布一次以恢復同步。</p>
 <div id="autoBar" hidden><p id="autoStatus" role="status"></p><button type="button" id="stopAuto">停止自動同步</button></div>
 <p id="toolStatus" role="status" hidden></p>
 <div id="publishPanel">
@@ -297,7 +297,7 @@ async function syncAuto(session){
  try{
   await publishMonth(session.token,session.month,values,allowed);
   session.last=current;
-  if(autoSession===session)status.textContent=session.month+' 已同步並讀回確認。家長頁會在部署後更新。';
+  if(autoSession===session)status.textContent=session.month+' 已同步並讀回確認，共 '+allowed.length+' 筆收支，'+allowed.filter(item=>item.note.trim()).length+' 筆有備註。家長頁會在部署後更新。';
  }catch(error){
   if(autoSession===session)status.textContent=session.month+' 同步失敗。'+error.message+' 可停止後重新啟用。';
  }finally{
@@ -451,7 +451,8 @@ async function init(){
    ...(editing?.kind===$('kind').value&&editing.publicCategory?{publicCategory:editing.publicCategory}:{})
   };
   await save({...state,rows:[...state.rows.filter(other=>other.id!==row.id),row]});
-  reset(date);render();feedback('已儲存。');
+  reset(date);render();
+  feedback(autoSession?.month===date.slice(0,7)?'已儲存，正在排程同步家長月報。':'已儲存到帳本。請按「發布月報」同步這個月份。');
  });
  operation('opening','submit',async()=>{
   await save({...state,opening:Math.round(Number($('balance').value)*100)});
@@ -475,7 +476,7 @@ async function init(){
  });
  rememberToken('');
  $('forgetToken').onclick=()=>{
-  if(autoSession||$('publish').dataset.busy){
+  if(autoSession){
    $('tokenStatus').textContent='請先停止自動同步或等本次發布完成，再清除權杖。';
    return;
   }
@@ -499,11 +500,10 @@ async function init(){
  $('publish').addEventListener('submit',async event=>{
   event.preventDefault();
   const status=$('publishStatus');
-  if($('publish').dataset.busy)return;
   const enable=event.submitter?.id==='enableAuto';
   const token=$('publishToken').value.trim()||rememberedToken;
   if(!$('year').checkValidity()){status.textContent='請選擇有效年份。';return}
-  const month=monthKey(),values=totals(month);
+  const month=monthKey();
   const details=publicDetailsFor(month);
   if(autoSession){
    if(!enable&&autoSession.month===month){
@@ -523,23 +523,11 @@ async function init(){
   $('publishToken').value='';
   $('tokenField').hidden=true;
   rememberToken(token);
-  if(enable){
-   autoSession={token,month,last:null};
-   $('autoBar').hidden=false;
-   $('stopAuto').hidden=false;
-   status.textContent='已啟用。儲存交易或變更公開用途時，會更新所選月份的月報。';
-   await syncAuto(autoSession);
-   return;
-  }
-  const button=$('openPublish');
-  button.disabled=true;
-  $('publish').dataset.busy='true';
-  try{
-   status.textContent='正在更新 GitHub 月報…';
-   await publishMonth(token,month,values,details);
-   status.textContent='已發布並讀回確認，共 '+details.length+' 筆收支，其中 '+details.filter(item=>item.note.trim()).length+' 筆有備註。家長頁將在部署後更新。';
-  }catch(error){status.textContent=error.message}
-  finally{button.disabled=false;delete $('publish').dataset.busy}
+  autoSession={token,month,last:null};
+  $('autoBar').hidden=false;
+  $('stopAuto').hidden=false;
+  status.textContent='此分頁已啟用 '+month+' 自動同步。';
+  await syncAuto(autoSession);
  });
  operation('summary','click',async()=>{
   const month=monthKey();
