@@ -269,7 +269,6 @@ async function switchView(view){
 for(const control of document.querySelectorAll('[data-view]')){
  control.addEventListener('click',()=>switchView(control.dataset.view));
 }
-const publicCategories={income:['隊費','補助','捐款','其他收入'],expense:['教練費','報名費','交通費','隊車油料','車輛維護','器材費','補給飲水','行政費','其他支出']};
 let rememberedToken='';
 function rememberToken(token){
  rememberedToken=token;
@@ -306,26 +305,19 @@ async function syncAuto(session){
  }
 }
 
-function publicCategory(row){
- if(publicCategories[row.kind].includes(row.publicCategory))return row.publicCategory;
- const matches=row.kind==='income'
-  ? [[/隊費/,'隊費'],[/補助/,'補助'],[/捐款/,'捐款']]
-  : [[/教練/,'教練費'],[/報名/,'報名費'],[/油料|加油|汽油/,'隊車油料'],[/車輛維護|保養|耗損/,'車輛維護'],[/交通|車資|停車|租車/,'交通費'],[/飲水|補給|麵包|餐費/,'補給飲水'],[/器材|設備/,'器材費'],[/行政/,'行政費']];
- return matches.find(([pattern])=>pattern.test(row.title))?.[1] || (row.kind==='income'?'其他收入':'其他支出');
-}
 function publicDetailsFor(month){
  return cleanPublicDetails(state.rows.filter(row=>row.date.startsWith(month+'-'))
-  .map(row=>({date:row.date,kind:row.kind,category:publicCategory(row),amount:row.amount/100,note:row.note})),month)
+  .map(row=>({date:row.date,kind:row.kind,category:row.title,amount:row.amount/100,note:row.note})),month)
   .sort((a,b)=>a.date.localeCompare(b.date));
 }
 function renderPublicDetails(month){
  const details=publicDetailsFor(month);
- $('publicDetails').textContent='本月將公開 '+details.length+' 筆收支，其中 '+details.filter(item=>item.note.trim()).length+' 筆有備註。';
+ $('publicDetails').textContent='本月將公開 '+details.length+' 筆收支，其中 '+details.filter(item=>item.note.trim()).length+' 筆有備註。用途顯示帳本的品名／摘要。';
 }
 function cleanPublicDetails(details,month){
  if(!Array.isArray(details))return [];
  return details.filter(item=>item&&validDate(item.date)&&item.date.startsWith(month+'-')&&
-  Object.hasOwn(publicCategories,item.kind)&&publicCategories[item.kind].includes(item.category)&&
+  ['income','expense'].includes(item.kind)&&typeof item.category==='string'&&item.category.trim()&&
   Number.isFinite(item.amount)&&item.amount>0).map(({date,kind,category,amount,note})=>({date,kind,category,amount,note:typeof note==='string'?note.slice(0,400):''}));
 }
 const summaryKeys=['opening','income','expense','closing'];
@@ -447,8 +439,7 @@ async function init(){
    id:editing?.id||crypto.randomUUID(),date,kind:$('kind').value,title:$('title').value.trim(),
    amount:Math.round(Number($('amount').value)*100),note:$('note').value,
    receipt:file?await readReceipt(file):editing?.receipt||null,
-   receiptName:file?.name||editing?.receiptName||null,
-   ...(editing?.kind===$('kind').value&&editing.publicCategory?{publicCategory:editing.publicCategory}:{})
+   receiptName:file?.name||editing?.receiptName||null
   };
   await save({...state,rows:[...state.rows.filter(other=>other.id!==row.id),row]});
   reset(date);render();
