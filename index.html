@@ -5,7 +5,7 @@
 <title>西松高中自由車隊｜帳務與賽事管理工作站</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#edf3f3;color:#153438;font:1rem system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:1rem}header,section{padding:1rem 1.25rem;border-radius:14px;margin-bottom:1rem;background:white}header{background:#153438;color:white}h1,h2{margin:.3rem 0 .8rem}label{display:inline-grid;gap:.25rem;margin:.25rem .5rem .25rem 0}button,input,select{font:inherit;padding:.45rem;border:1px solid #7d9595;border-radius:6px}button{background:#f4f8f8;cursor:pointer}button[aria-pressed=true],.primary{background:#146b60;color:white}#days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.25rem;text-align:center}#days button{min-height:2.4rem;padding:.15rem}#totals{line-height:1.8}.row{padding:.75rem 0;border-top:1px solid #c8d6d6}.row strong{display:block;margin-bottom:.35rem;overflow-wrap:anywhere}.row button{margin:.2rem}#status{min-height:1.4em}#backup{margin:.3rem 0}
-nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}</style>
+nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}</style>
 <main>
 <header><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1><p>收支與憑證儲存在目前瀏覽器。清除網站資料或換裝置前，請下載完整備份。</p></header>
 <nav aria-label="工作站功能"><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
@@ -29,15 +29,18 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <section class="ledger-tools"><h2>備份與家長月報</h2>
 <div class="ledger-actions">
 <button type="button" id="backup">備份帳本</button>
-<button type="button" id="openPublish" class="primary" aria-controls="publishPanel" aria-expanded="false">發布月報</button>
+<button type="submit" form="publish" id="openPublish" class="primary">發布月報</button>
 </div>
 <p>備份會下載收支與憑證。家長月報包含每月總額、餘額和交易明細。</p>
 <div id="autoBar" hidden><p id="autoStatus" role="status"></p><button type="button" id="stopAuto">停止自動同步</button></div>
 <p id="toolStatus" role="status" hidden></p>
-<div id="publishPanel" hidden>
+<div id="publishPanel">
 <h3 id="publishHeading">發布月報到家長頁</h3>
 <p id="publishPreview"></p><p id="publicDetails"></p>
-<form id="publish"><label>GitHub 發布權杖<input id="publishToken" type="password" autocomplete="off" spellcheck="false"></label><button class="primary">發布一次</button> <button type="submit" id="enableAuto">啟用本次自動同步</button></form>
+<form id="publish"><label id="tokenField" hidden>GitHub 發布權杖<input id="publishToken" type="password" autocomplete="off" spellcheck="false"></label></form>
+<details id="publishOptions"><summary>發布設定</summary>
+<button type="submit" form="publish" id="enableAuto">啟用本次自動同步</button>
+</details>
 <p id="tokenStatus" role="status"></p><button id="forgetToken" type="button" hidden>清除本分頁權杖</button>
 <p id="publishStatus" role="status"></p>
 <details><summary>如何取得發布權杖？</summary>
@@ -426,13 +429,6 @@ function initDues(){
  };
 }
 async function init(){
- $('openPublish').onclick=()=>{
-  const panel=$('publishPanel');
-  panel.hidden=!panel.hidden;
-  $('openPublish').setAttribute('aria-expanded',String(!panel.hidden));
-  if(panel.hidden)$('publishToken').value='';
-  else $('publishHeading').scrollIntoView({block:'nearest'});
- };
  state=await storage('readonly',store=>store.get('data'))||state;
  initDues();
  for(let m=1;m<=12;m++)$('month').add(new Option(m+' 月',m));
@@ -494,19 +490,38 @@ async function init(){
   $('publishStatus').textContent='';
   $('stopAuto').hidden=true;
  };
+ $('publishToken').addEventListener('keydown',event=>{
+  if(event.key==='Enter'){
+   event.preventDefault();
+   $('publish').requestSubmit($('openPublish'));
+  }
+ });
  $('publish').addEventListener('submit',async event=>{
   event.preventDefault();
   const status=$('publishStatus');
   if($('publish').dataset.busy)return;
-  if(autoSession){status.textContent='請先停止目前的自動同步。';return}
   const enable=event.submitter?.id==='enableAuto';
   const token=$('publishToken').value.trim()||rememberedToken;
-  $('publishToken').value='';
-  if(!$('year').checkValidity()||!token){status.textContent='請填寫有效年份和權杖。';return}
+  if(!$('year').checkValidity()){status.textContent='請選擇有效年份。';return}
   const month=monthKey(),values=totals(month);
   const details=publicDetailsFor(month);
-  
-  if(!confirm((enable?'啟用 '+month+' 的自動同步？儲存後會更新此月報。':'發布 '+month+' 月報？')+'\n'+describe(values)+'\n公開明細 '+details.length+' 筆'))return;
+  if(autoSession){
+   if(!enable&&autoSession.month===month){
+    if(!autoSession.busy)autoSession.last=null;
+    await syncAuto(autoSession);
+   }else status.textContent='請先停止 '+autoSession.month+' 的自動同步。';
+   return;
+  }
+  if(!token){
+   $('tokenField').hidden=false;
+   $('publishToken').focus();
+   status.textContent='首次請貼上權杖，再按上方「發布月報」或按 Enter。';
+   return;
+  }
+  if(enable&&!confirm('啟用 '+month+' 的自動同步？儲存後會更新此月報。'))return;
+  if(!details.length&&!confirm(month+' 沒有交易明細，仍要發布嗎？'))return;
+  $('publishToken').value='';
+  $('tokenField').hidden=true;
   rememberToken(token);
   if(enable){
    autoSession={token,month,last:null};
@@ -516,7 +531,7 @@ async function init(){
    await syncAuto(autoSession);
    return;
   }
-  const button=event.submitter;
+  const button=$('openPublish');
   button.disabled=true;
   $('publish').dataset.busy='true';
   try{
