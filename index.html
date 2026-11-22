@@ -294,7 +294,7 @@ async function syncAuto(session){
  try{
   await publishMonth(session.token,session.month,values,allowed);
   session.last=current;
-  if(autoSession===session)status.textContent=session.month+' 已同步到 GitHub。家長頁會在部署後更新。';
+  if(autoSession===session)status.textContent=session.month+' 已同步並讀回確認。家長頁會在部署後更新。';
  }catch(error){
   if(autoSession===session)status.textContent=session.month+' 同步失敗。'+error.message+' 可停止後重新啟用。';
  }finally{
@@ -345,15 +345,21 @@ async function publishMonth(token,month,values,details){
  const file=await current.json();
  if(file.encoding!=='base64'||!file.sha)throw new Error('無法驗證現有月報版本。');
  const source=new TextDecoder().decode(Uint8Array.from(atob(file.content),character=>character.charCodeAt(0)));
- const payload=new TextEncoder().encode(JSON.stringify(mergeReport(JSON.parse(source).reports,month,values,details),null,2)+'\n');
+ const report=mergeReport(JSON.parse(source).reports,month,values,details);
+ const payload=new TextEncoder().encode(JSON.stringify(report,null,2)+'\n');
  const content=btoa(Array.from(payload,byte=>String.fromCharCode(byte)).join(''));
  const result=await fetch(endpoint,{
   method:'PUT',headers:{...headers,'Content-Type':'application/json'},redirect:'error',
-  body:JSON.stringify({branch:'main',sha:file.sha,message:'Publish ledger summary for '+month,content})
+  body:JSON.stringify({branch:'main',sha:file.sha,message:'Publish ledger summary with notes for '+month,content})
  });
  if(result.status===409)throw new Error('同時有人更新了月報，請重新發布以合併最新資料。');
  if(!result.ok)throw new Error('GitHub 拒絕發布（'+result.status+'）。請確認 Contents 有寫入權限。');
  const update=await result.json();
+ const verification=await fetch(endpoint+'?ref='+encodeURIComponent(update.commit.sha),{headers,cache:'no-store',redirect:'error'});
+ if(!verification.ok)throw new Error('GitHub 已接收發布，但暫時無法讀回確認備註。');
+ const saved=await verification.json();
+ const decoded=new TextDecoder().decode(Uint8Array.from(atob(saved.content),character=>character.charCodeAt(0)));
+ if(decoded!==new TextDecoder().decode(payload))throw new Error('GitHub 回讀的月報與送出內容不同。');
  return update.commit.sha;
 }
 const monthlyDues=250000;
@@ -516,7 +522,7 @@ async function init(){
   try{
    status.textContent='正在更新 GitHub 月報…';
    await publishMonth(token,month,values,details);
-   status.textContent='已更新 GitHub 月報，共 '+details.length+' 筆收支，其中 '+details.filter(item=>item.note.trim()).length+' 筆有備註。家長頁將在部署後更新。';
+   status.textContent='已發布並讀回確認，共 '+details.length+' 筆收支，其中 '+details.filter(item=>item.note.trim()).length+' 筆有備註。家長頁將在部署後更新。';
   }catch(error){status.textContent=error.message}
   finally{button.disabled=false;delete $('publish').dataset.busy}
  });
