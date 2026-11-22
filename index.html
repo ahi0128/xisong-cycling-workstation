@@ -316,7 +316,8 @@ function publicDetailsFor(month){
   .sort((a,b)=>a.date.localeCompare(b.date));
 }
 function renderPublicDetails(month){
- $('publicDetails').textContent='本月 '+publicDetailsFor(month).length+' 筆收支會隨月報公開，包含帳本備註。';
+ const details=publicDetailsFor(month);
+ $('publicDetails').textContent='本月將公開 '+details.length+' 筆收支，其中 '+details.filter(item=>item.note.trim()).length+' 筆有備註。';
 }
 function cleanPublicDetails(details,month){
  if(!Array.isArray(details))return [];
@@ -515,7 +516,7 @@ async function init(){
   try{
    status.textContent='正在更新 GitHub 月報…';
    await publishMonth(token,month,values,details);
-   status.textContent='已更新 GitHub 月報。家長頁將在 Pages 部署完成後顯示。';
+   status.textContent='已更新 GitHub 月報，共 '+details.length+' 筆收支，其中 '+details.filter(item=>item.note.trim()).length+' 筆有備註。家長頁將在部署後更新。';
   }catch(error){status.textContent=error.message}
   finally{button.disabled=false;delete $('publish').dataset.busy}
  });
