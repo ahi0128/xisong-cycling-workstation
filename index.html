@@ -8,10 +8,10 @@
 nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}#tokenField{width:min(100%,24rem)}#publishToken{width:100%}.ledger-advanced>summary{cursor:pointer;padding:.8rem 0} .receipt-fields{margin:.5rem 0 .75rem;min-width:0}.receipt-fields label{max-width:100%;min-width:0;margin-right:0}.receipt-fields input{box-sizing:border-box;max-width:100%;min-width:0}.receipt-fields input[type=file]{width:min(100%,32rem)}.receipt-fields summary{cursor:pointer;margin:.4rem 0} [data-result=success],[data-result=error]{display:block;width:fit-content;max-width:100%;padding:.4rem .6rem;border-radius:6px;font-weight:700;overflow-wrap:anywhere}[data-result=success]{color:#166534;background:#dcfce7}[data-result=error]{color:#991b1b;background:#fee2e2}.ledger-income strong{color:#166534}.ledger-expense strong{color:#991b1b}</style>
 <main>
 <header><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
-<button type="button" id="loadCloud">使用 Google 帳號登入</button><p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
+<button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
 <p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer" style="color:#fff;font-weight:700">開啟正式雲端帳本</a></p></header>
-<nav aria-label="工作站功能"><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
-<div id="ledger">
+<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
+<div id="ledger" hidden>
 <section>
 <h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
 <div id="days" aria-label="月曆"></div><p id="totals"></p><details id="annualTotals" hidden><summary>查看年度合計</summary><p id="annual"></p></details>
@@ -678,6 +678,9 @@ async function loadCloudLedger({signIn=false}={}){
  showingLocalLedger=false;
  $('viewLocal').setAttribute('aria-pressed','false');
  $('loadCloud').textContent='重新整理正式帳簿';
+ $('loadCloud').classList.remove('primary');
+ $('workstationNav').hidden=false;
+ $('ledger').hidden=activeView!=='ledger';
  feedback('目前顯示正式雲端帳簿。','ledgerSource','success');
  render();
  return cloudLedger;
@@ -797,7 +800,7 @@ async function init(){
   feedback('目前顯示本機舊帳本。新增收支仍會寫入正式帳簿。','ledgerSource');
   render();
  };
- $('loadCloud').onclick=async()=>{const button=$('loadCloud');button.disabled=true;try{await loadCloudLedger({signIn:!cloudLedger})}catch(error){feedback(error.message,'ledgerSource','error')}finally{button.disabled=false}};
+ $('loadCloud').onclick=async()=>{const button=$('loadCloud');button.disabled=true;feedback('正在連線至正式帳簿…','ledgerSource');try{await loadCloudLedger({signIn:!cloudLedger})}catch(error){feedback(error.message,'ledgerSource','error')}finally{button.disabled=false}};
  for(let m=1;m<=12;m++)$('month').add(new Option(m+' 月',m));
  reset(today);render();
  for(const id of ['year','month'])$(id).onchange=()=>{
