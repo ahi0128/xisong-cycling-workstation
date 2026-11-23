@@ -5,7 +5,7 @@
 <title>西松高中自由車隊｜帳務與賽事管理工作站</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#edf3f3;color:#153438;font:1rem system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:1rem}header,section{padding:1rem 1.25rem;border-radius:14px;margin-bottom:1rem;background:white}header{background:#153438;color:white}h1,h2{margin:.3rem 0 .8rem}label{display:inline-grid;gap:.25rem;margin:.25rem .5rem .25rem 0}button,input,select{font:inherit;padding:.45rem;border:1px solid #7d9595;border-radius:6px}button{background:#f4f8f8;cursor:pointer}button[aria-pressed=true],.primary{background:#146b60;color:white}#days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.25rem;text-align:center}#days button{min-height:2.4rem;padding:.15rem}#totals{line-height:1.8}.row{padding:.75rem 0;border-top:1px solid #c8d6d6}.row strong{display:block;margin-bottom:.35rem;overflow-wrap:anywhere}.row button{margin:.2rem}#status{min-height:1.4em}#backup{margin:.3rem 0}
-nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}#tokenField{width:min(100%,24rem)}#publishToken{width:100%}.ledger-advanced>summary{cursor:pointer;padding:.8rem 0} .receipt-fields{margin:.5rem 0 .75rem;min-width:0}.receipt-fields label{max-width:100%;min-width:0;margin-right:0}.receipt-fields input{box-sizing:border-box;max-width:100%;min-width:0}.receipt-fields input[type=file]{width:min(100%,32rem)}.receipt-fields summary{cursor:pointer;margin:.4rem 0} [data-result=success],[data-result=error]{display:block;width:fit-content;max-width:100%;padding:.4rem .6rem;border-radius:6px;font-weight:700;overflow-wrap:anywhere}[data-result=success]{color:#166534;background:#dcfce7}[data-result=error]{color:#991b1b;background:#fee2e2}.ledger-income strong{color:#166534}.ledger-expense strong{color:#991b1b}</style>
+nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}#tokenField{width:min(100%,24rem)}#publishToken{width:100%}.ledger-advanced>summary{cursor:pointer;padding:.8rem 0} .receipt-fields{margin:.5rem 0 .75rem;min-width:0}.receipt-fields label{max-width:100%;min-width:0;margin-right:0}.receipt-fields input{box-sizing:border-box;max-width:100%;min-width:0}.receipt-fields input[type=file]{width:min(100%,32rem)}.receipt-fields summary{cursor:pointer;margin:.4rem 0} [data-result=success],[data-result=error]{display:block;width:fit-content;max-width:100%;padding:.4rem .6rem;border-radius:6px;font-weight:700;overflow-wrap:anywhere}[data-result=success]{color:#166534;background:#dcfce7}[data-result=error]{color:#991b1b;background:#fee2e2}.ledger-income strong{color:#166534}.ledger-expense strong{color:#991b1b}.dues-paid,.dues-unpaid{padding-inline:.65rem;font-weight:700}.dues-paid{background:#dcfce7;color:#166534}.dues-unpaid{background:#fee2e2;color:#991b1b}</style>
 <main>
 <header><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
 <button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
@@ -94,7 +94,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <form id="rosterAdd"><label>新增隊員姓名或代號<input id="rosterName" maxlength="60" required></label><button>加入固定名單</button></form>
 <div id="rosterRows"></div>
 </details>
-<p>每人每月 2,500 元。勾選已繳只更新管理清單；實收款請在收支帳本登錄一次。固定名單從雲端載入。繳納狀態與本月調整存在目前的瀏覽器，可隨完整備份保存。</p>
+<p>每人每月 2,500 元。收款請從此頁登記。確認實收會同步雲端繳納清單，並以今天為收款日入帳。既有本機勾選須先核對是否已入帳。本月名單調整仍保存在目前瀏覽器。</p>
 <p id="duesStatus" role="status"></p><div id="duesRows"></div>
 </section><section id="races" hidden><h2 id="raceTitle"></h2><div id="raceList" role="status"></div></section></main>
 <script>
@@ -209,7 +209,7 @@ function render(){
     link.target='_blank';link.rel='noopener noreferrer';
     item.append(document.createTextNode(' '),link);
    }
-   if(row.id){
+   if(row.id&&!row.id.startsWith('dues:')){
     item.append(document.createTextNode(' '),button('編輯',()=>{
      reset(row.date);
      editing={...row,cloud:true};
@@ -467,13 +467,77 @@ async function publishMonth(token,month,values,details,{fromCloud=false}={}){
  }
 }
 const monthlyDues=250000;
+const duesHeaders=['繳費月份','姓名／代號','應繳金額','實繳金額','繳費日期','繳費狀態','備註'];
+async function readDuesPayments(){
+ const {values=[]}=await sheetsRequest('/values/'+encodeURIComponent("'每月隊費繳納'!A:G"));
+ if(duesHeaders.some((name,index)=>values[0]?.[index]!==name))throw new Error('雲端繳納分頁欄位不符。');
+ return values.slice(1).flatMap((row,index)=>{
+  const [month,name,,received,date,status,note]=row;
+  return validDuesMonth(month)&&name?[{month,name,received:toCloudCents(received),date:date||'',status,paid:status==='已繳',note:note||'',cloud:true,rowIndex:index+1}]:[];
+ });
+}
+async function recordDuesPayment(item){
+ if(duesWritePending)return;
+ const month=duesMonth(),paid=!(item.cloud&&item.paid);
+ if(!validDuesMonth(month))return;
+ const action=paid?'確認已實收 '+money(monthlyDues)+'？若這筆已手動入帳，請取消。':'更正為未繳，並撤銷系統入帳的這筆收入？';
+ if(!confirm(month+' ｜ '+item.name+'\n'+action))return;
+ duesWritePending=true;
+ let written=false;
+ try{
+  await authorizeSheets();
+  const [payments,{values=[]}]=await Promise.all([
+   readDuesPayments(),sheetsRequest('/values/'+encodeURIComponent("'收支明細'!A:G"))
+  ]);
+  const matches=payments.filter(row=>row.month===month&&row.name===item.name);
+  const current=matches[0];
+  const id='dues:'+month+':'+item.name;
+  const linked=values.flatMap((row,index)=>index&&row[6]===id?[index]:[]);
+  if(matches.length>1||linked.length>1)throw new Error('同一位隊員有重複紀錄，請先核對帳簿。');
+  if(current&&(current.status!==(item.cloud?item.status:'未繳')||
+      !['已繳','未繳'].includes(current.status)))
+   throw new Error('雲端繳納狀態已變更，請重新載入後操作。');
+  if(!paid&&(!current||linked.length!==1||toCloudCents(values[linked[0]][2])!==current.received))
+   throw new Error('找不到與這筆繳費金額相符的系統收入，請核對原入帳紀錄。');
+  if(paid&&linked.length&&values[linked[0]].slice(0,6).some(Boolean))
+   throw new Error('這筆隊費已有入帳紀錄，請先核對。');
+  if(values[0]?.[6]&&values[0][6]!=='登記識別碼')throw new Error('帳簿識別欄格式不符。');
+  const date=paid?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date()):'';
+  const receiptMonth=(date||current.date).replaceAll('/','-').slice(0,7);
+  const cell=value=>value===''?{}:{userEnteredValue:typeof value==='number'?{numberValue:value}:{stringValue:value}};
+  const write=(sheetId,rowIndex,fields)=>rowIndex===undefined?
+   {appendCells:{sheetId,rows:[{values:fields.map(cell)}],fields:'userEnteredValue'}}:
+   {updateCells:{start:{sheetId,rowIndex,columnIndex:0},rows:[{values:fields.map(cell)}],fields:'userEnteredValue'}};
+  const requests=[];
+  if(!values[0]?.[6])requests.push({updateCells:{start:{sheetId:1013939567,rowIndex:0,columnIndex:6},rows:[{values:[cell('登記識別碼')]}],fields:'userEnteredValue'}});
+  requests.push(
+   write(26062302,current?.rowIndex,[month,item.name,monthlyDues/100,paid?monthlyDues/100:0,date,paid?'已繳':'未繳',current?.note||'']),
+   write(1013939567,linked[0],paid?[date,'隊費（'+month+'）',monthlyDues/100,'','','',id]:['','','','','','',id])
+  );
+  await sheetsRequest(':batchUpdate',{method:'POST',body:JSON.stringify({requests})});
+  written=true;
+  cloudDuesPayments=await readDuesPayments();
+  renderDues();
+  await loadCloudLedger();
+  const token=$('publishToken').value.trim()||rememberedToken;
+  if(token)await publishMonth(token,receiptMonth,undefined,undefined,{fromCloud:true});
+  feedback(token?'雲端繳納清單、收支帳簿及家長月報已更新。':'雲端繳納清單與收支帳簿已更新，家長月報待發布。','duesStatus',token?'success':'error');
+ }catch(error){
+  try{cloudDuesPayments=await readDuesPayments();renderDues()}catch{}
+  feedback((written?'已入帳，後續同步未完成：':'未確認寫入：')+error.message,'duesStatus','error');
+ }finally{duesWritePending=false}
+}
 function duesMonth(){return $('duesMonth').value}
 function validDuesMonth(month){return /^\d{4}-(0[1-9]|1[0-2])$/.test(month)}
-let cloudDuesRoster;
+let cloudDuesRoster, cloudDuesPayments;
+let duesWritePending=false;
 async function loadDuesRoster(){
  feedback('正在載入雲端固定名單…','duesRosterStatus');
  await authorizeSheets();
- const {values=[]}=await sheetsRequest('/values/'+encodeURIComponent("'隊費固定名單'!A:B"));
+ const [{values=[]}, payments]=await Promise.all([
+  sheetsRequest('/values/'+encodeURIComponent("'隊費固定名單'!A:B")),readDuesPayments()
+ ]);
+ cloudDuesPayments=payments;
  if(values[0]?.[0]?.trim()!=='姓名')throw new Error('找不到姓名欄。');
  const names=[...new Set(values.slice(1).map(row=>String(row?.[0]??'').trim()).filter(Boolean))];
  if(!validRoster(names))throw new Error('雲端名單有格式錯誤。');
@@ -486,7 +550,10 @@ function duesList(month=duesMonth()){
  if(!cloudDuesRoster||month!==duesMonth())return saved.filter(item=>!item.excluded);
  const statuses=new Map(saved.map(item=>[item.name,item]));
  const fixed=cloudDuesRoster.map(name=>statuses.get(name)||{name,paid:false});
- return [...fixed,...saved.filter(item=>!cloudDuesRoster.includes(item.name))].filter(item=>!item.excluded);
+ const monthly=(cloudDuesPayments||[]).filter(item=>item.month===month);
+ const byName=new Map([...fixed,...saved.filter(item=>!cloudDuesRoster.includes(item.name))].map(item=>[item.name,item]));
+ for(const item of monthly)byName.set(item.name,{...byName.get(item.name),...item,excluded:false});
+ return [...byName.values()].filter(item=>!item.excluded);
 }
 function validDues(data){
  return data===undefined||(data&&typeof data==='object'&&!Array.isArray(data)&&Object.entries(data).every(([month,items])=>
@@ -496,16 +563,22 @@ function validDues(data){
 function renderDues(){
  renderRoster();
  const items=duesList();
- const paid=items.filter(item=>item.paid).length;
- $('duesTotals').textContent='已繳 '+paid+' 人（'+money(paid*monthlyDues)+'）｜未繳 '+(items.length-paid)+' 人（'+money((items.length-paid)*monthlyDues)+'）';
+ const paid=items.filter(item=>item.paid&&item.cloud).length;
+ const unconfirmed=items.filter(item=>!item.cloud&&item.paid).length;
+ const other=items.filter(item=>item.cloud&&!['已繳','未繳'].includes(item.status)).length;
+ const unpaid=items.length-paid-unconfirmed-other;
+ const received=items.reduce((sum,item)=>sum+(item.cloud?item.received:0),0);
+ $('duesTotals').textContent='已繳 '+paid+' 人｜未繳 '+unpaid+' 人｜雲端實繳 '+money(received)+(unconfirmed?'｜本機待核對 '+unconfirmed+' 人':'')+(other?'｜部分繳納／免繳 '+other+' 人':'');
  const list=$('duesRows');
  list.replaceChildren();
  for(const item of items){
   const line=document.createElement('div');
-  line.className='row';
-  line.append(document.createTextNode(item.name+' ｜ '+(item.paid?'已繳':'未繳')+' '));
-  line.append(button(item.paid?'改為未繳':'標記已繳',()=>updateDues(duesList().map(entry=>entry.name===item.name?{...entry,paid:!entry.paid}:entry))));
-  line.append(button('移出本月',()=>{
+  line.className='row '+(item.cloud&&item.paid?'dues-paid':item.paid||item.cloud&&item.status!=='未繳'?'':'dues-unpaid');
+  const label=item.cloud?item.status:item.paid?'本機已勾選 · 待核對':'未繳';
+  line.append(document.createTextNode(item.name+' ｜ '+label+' '));
+  if(!item.cloud||['已繳','未繳'].includes(item.status))
+   line.append(button(item.cloud&&item.paid?'更正為未繳':item.paid?'確認實收並入帳':'標記已繳並入帳',()=>recordDuesPayment(item)));
+  if(!item.cloud)line.append(button('移出本月',()=>{
    if(confirm('將 '+item.name+' 移出本月清單？'))return updateDues(duesList().filter(entry=>entry.name!==item.name));
   }));
   list.append(line);
@@ -624,7 +697,7 @@ function csvRows(input){
  return rows;
 }
 function toCloudCents(value,signed=false){
- const raw=(value||'').trim().replaceAll(',','');
+ const raw=String(value??'').trim().replaceAll(',','');
  if(!raw)return 0;
  const result=Math.round(Number(raw)*100);
  if(!/^-?\d+(?:\.\d{1,2})?$/.test(raw)||!Number.isSafeInteger(result)||(!signed&&result<0))throw new Error('金額須為有效數字。');
