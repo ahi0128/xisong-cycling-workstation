@@ -563,7 +563,10 @@ function duesList(month=duesMonth()){
  const fixed=cloudDuesRoster.map(name=>statuses.get(name)||{name,paid:false});
  const monthly=(cloudDuesPayments||[]).filter(item=>item.month===month);
  const byName=new Map([...fixed,...saved.filter(item=>!cloudDuesRoster.includes(item.name))].map(item=>[item.name,item]));
- for(const item of monthly)byName.set(item.name,{...byName.get(item.name),...item,excluded:false});
+ for(const item of monthly){
+  const excluded=statuses.get(item.name)?.excluded&&item.status==='未繳'&&item.received===0;
+  byName.set(item.name,{...byName.get(item.name),...item,excluded});
+ }
  return [...byName.values()].filter(item=>!item.excluded);
 }
 function validDues(data){
@@ -589,7 +592,7 @@ function renderDues(){
   line.append(document.createTextNode(item.name+' ｜ '+label+' '));
   if(!item.cloud||['已繳','未繳'].includes(item.status))
    line.append(button(item.cloud&&item.paid?'更正為未繳':item.paid?'確認實收並入帳':'標記已繳並入帳',()=>recordDuesPayment(item)));
-  if(!item.cloud)line.append(button('移出本月',()=>{
+  if(!item.cloud||(item.status==='未繳'&&item.received===0))line.append(button('移出本月',()=>{
    if(confirm('將 '+item.name+' 移出本月清單？'))return updateDues(duesList().filter(entry=>entry.name!==item.name));
   }));
   list.append(line);
@@ -602,7 +605,9 @@ async function updateDues(items){
  if(!validDuesMonth(month)){status.textContent='請選擇有效月份。';return false}
  try{
   const names=new Set(items.map(item=>item.name));
-  const exclusions=(cloudDuesRoster||[]).filter(name=>!names.has(name)).map(name=>({name,paid:false,excluded:true}));
+  const removableCloud=(cloudDuesPayments||[]).filter(item=>item.month===month&&item.status==='未繳'&&item.received===0);
+  const rosterNames=new Set([...(cloudDuesRoster||[]),...removableCloud.map(item=>item.name)]);
+  const exclusions=[...rosterNames].filter(name=>!names.has(name)).map(name=>({name,paid:false,excluded:true}));
   const fixed=new Set(cloudDuesRoster||[]);
   const saved=items.filter(item=>!fixed.has(item.name)||item.paid||item.manual);
   await save({...state,dues:{...state.dues,[month]:[...saved,...exclusions]}});
