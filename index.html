@@ -5,7 +5,7 @@
 <title>西松高中自由車隊｜帳務與賽事管理工作站</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#edf3f3;color:#153438;font:1rem system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:1rem}header,section{padding:1rem 1.25rem;border-radius:14px;margin-bottom:1rem;background:white}header{background:#153438;color:white}h1,h2{margin:.3rem 0 .8rem}label{display:inline-grid;gap:.25rem;margin:.25rem .5rem .25rem 0}button,input,select{font:inherit;padding:.45rem;border:1px solid #7d9595;border-radius:6px}button{background:#f4f8f8;cursor:pointer}button[aria-pressed=true],.primary{background:#146b60;color:white}#days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.25rem;text-align:center}#days button{min-height:2.4rem;padding:.15rem}#totals{line-height:1.8}.row{padding:.75rem 0;border-top:1px solid #c8d6d6}.row strong{display:block;margin-bottom:.35rem;overflow-wrap:anywhere}.row button{margin:.2rem}#status{min-height:1.4em}#backup{margin:.3rem 0}
-nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}#tokenField{width:min(100%,24rem)}#publishToken{width:100%}.ledger-advanced>summary{cursor:pointer;padding:.8rem 0} .receipt-fields{margin:.5rem 0 .75rem;min-width:0}.receipt-fields label{max-width:100%;min-width:0;margin-right:0}.receipt-fields input{box-sizing:border-box;max-width:100%;min-width:0}.receipt-fields input[type=file]{width:min(100%,32rem)}.receipt-fields summary{cursor:pointer;margin:.4rem 0}</style>
+nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}#tokenField{width:min(100%,24rem)}#publishToken{width:100%}.ledger-advanced>summary{cursor:pointer;padding:.8rem 0} .receipt-fields{margin:.5rem 0 .75rem;min-width:0}.receipt-fields label{max-width:100%;min-width:0;margin-right:0}.receipt-fields input{box-sizing:border-box;max-width:100%;min-width:0}.receipt-fields input[type=file]{width:min(100%,32rem)}.receipt-fields summary{cursor:pointer;margin:.4rem 0} [data-result=success],[data-result=error]{display:block;width:fit-content;max-width:100%;padding:.4rem .6rem;border-radius:6px;font-weight:700;overflow-wrap:anywhere}[data-result=success]{color:#166534;background:#dcfce7}[data-result=error]{color:#991b1b;background:#fee2e2}.ledger-income strong{color:#166534}.ledger-expense strong{color:#991b1b}</style>
 <main>
 <header><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
 <button type="button" id="loadCloud">使用 Google 帳號登入</button><p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
@@ -150,7 +150,9 @@ function button(name,action){
  node.type='button';node.textContent=name;node.onclick=action;
  return node;
 }
-function feedback(message,target='status'){const node=$(target);node.textContent=message;node.hidden=false}
+function feedback(message,target='status',result=''){
+ const node=$(target);node.textContent=message;node.dataset.result=result;node.hidden=false;
+}
 function setDate(date){
  $('year').value=date.slice(0,4);
  $('month').value=Number(date.slice(5,7));
@@ -198,6 +200,7 @@ function render(){
   const label=document.createElement('strong');
   label.textContent=(row.kind==='income'?'收入':'支出')+' ｜ '+row.title+' ｜ '+money(row.amount);
   item.append(label,document.createTextNode(row.note||''));
+  item.classList.add(row.kind==='income'?'ledger-income':'ledger-expense');
   if(!showingLocalLedger){
    if(row.receiptLink){
     const link=document.createElement('a');
@@ -216,11 +219,11 @@ function render(){
    $('cancel').hidden=false;$('title').focus();
   }));
   if(row.receipt)item.append(button('下載憑證',async()=>{
-   try{download(row.receiptName,await (await fetch(row.receipt)).blob())}catch{feedback('憑證無法讀取。')}
+   try{download(row.receiptName,await (await fetch(row.receipt)).blob())}catch{feedback('憑證無法讀取。','status','error')}
   }));
   item.append(button('移除',async()=>{
    if(!confirm('移除這筆收支與憑證？'))return;
-   try{await save({...state,rows:state.rows.filter(other=>other.id!==row.id)});reset(date);render();feedback('已移除。')}catch{feedback('移除失敗。')}
+   try{await save({...state,rows:state.rows.filter(other=>other.id!==row.id)});reset(date);render();feedback('已移除。','status','success')}catch{feedback('移除失敗。','status','error')}
   }));
   $('records').append(item);
  }
@@ -238,7 +241,7 @@ function operation(id,event,run){
   e.preventDefault();
   const control=e.submitter||(event==='click'?e.currentTarget:null);
   if(control)control.disabled=true;
-  try{await run()}catch(error){feedback(error.message||'操作失敗。',id==='entry'?'status':'toolStatus')}
+  try{await run()}catch(error){feedback(error.message||'操作失敗。',id==='entry'?'status':'toolStatus','error')}
   finally{if(control)control.disabled=false}
  });
 }
@@ -481,10 +484,10 @@ async function updateDues(items){
  try{
   await save({...state,dues:{...state.dues,[month]:items}});
   renderDues();
-  status.textContent='已儲存繳納清單。';
+  feedback('已儲存繳納清單。','duesStatus','success');
   return true;
  }catch{
-  status.textContent='儲存繳納清單失敗。';
+  feedback('儲存繳納清單失敗。','duesStatus','error');
   return false;
  }
 }
@@ -636,9 +639,10 @@ async function authorizeSheets(withReceipt=false, requireDrive=withReceipt){
   });
   if(response.error||!google.accounts.oauth2.hasGrantedAllScopes(response,sheetsScope))
    throw new Error('請授權工作站存取 Google 試算表。');
-  sheetsHasDrive=google.accounts.oauth2.hasGrantedAllScopes(response,driveScope);
-  if(requireDrive&&!sheetsHasDrive)throw new Error('請完成 Google Drive 授權。');
+  const grantedDrive=google.accounts.oauth2.hasGrantedAllScopes(response,driveScope);
+  if(requireDrive&&!grantedDrive)throw new Error('請完成 Google Drive 授權。');
   sheetsToken=response.access_token;
+  sheetsHasDrive=grantedDrive;
   sheetsExpiry=Date.now()+Math.max(0,Number(response.expires_in)-60)*1000;
  }
 }
@@ -646,7 +650,7 @@ async function sheetsRequest(path,options={}){
   const response=await fetch(sheetsEndpoint+path,{
    ...options,headers:{Authorization:'Bearer '+sheetsToken,'Content-Type':'application/json'}
   });
-  if(response.status===401)sheetsExpiry=0;
+  if(response.status===401){sheetsToken=undefined;sheetsExpiry=0;sheetsHasDrive=false;}
   if(!response.ok)throw new Error(
    response.status===403?'目前的 Google 帳號無法寫入，請確認帳簿編輯權限及 Sheets API 設定。':
    response.status===401?'Google 授權已失效，請再按一次儲存。':'雲端帳簿請求失敗（'+response.status+'），請重試。');
@@ -661,7 +665,7 @@ async function loadCloudLedger({signIn=false}={}){
  showingLocalLedger=false;
  $('viewLocal').setAttribute('aria-pressed','false');
  $('loadCloud').textContent='重新整理正式帳簿';
- $('ledgerSource').textContent='目前顯示正式雲端帳簿。';
+ feedback('目前顯示正式雲端帳簿。','ledgerSource','success');
  render();
  return cloudLedger;
 }
@@ -680,14 +684,14 @@ async function deleteCloudEntry(row,control){
   removed=true;
   const ledger=await loadCloudLedger();
   const token=$('publishToken').value.trim()||rememberedToken;
-  if(!token){feedback('已刪除正式帳簿紀錄。家長月報待發布。');return}
+  if(!token){feedback('已刪除正式帳簿紀錄。家長月報待發布。','status','error');return}
   const month=row.date.slice(0,7);
   const {values:totals,details}=buildCloudMonth(ledger.rows,month,ledger.opening);
   await publishMonth(token,month,totals,details,{fromCloud:true});
   rememberToken(token);$('publishToken').value='';
-  feedback('已刪除正式帳簿紀錄並提交更新後的家長月報。');
+  feedback('已刪除正式帳簿紀錄並提交更新後的家長月報。','status','success');
  }catch(error){
-  feedback((removed?'已刪除正式帳簿紀錄，明細或家長月報待更新：':'刪除未確認，請先重新載入帳簿：')+error.message);
+  feedback((removed?'已刪除正式帳簿紀錄，明細或家長月報待更新：':'刪除未確認，請先重新載入帳簿：')+error.message,'status','error');
  }finally{control.disabled=false}
 }
 function receiptFilename(row,file,id){
@@ -765,10 +769,10 @@ async function init(){
  $('viewLocal').onclick=()=>{
   showingLocalLedger=true;
   $('viewLocal').setAttribute('aria-pressed','true');
-  $('ledgerSource').textContent='目前顯示本機舊帳本。新增收支仍會寫入正式帳簿。';
+  feedback('目前顯示本機舊帳本。新增收支仍會寫入正式帳簿。','ledgerSource');
   render();
  };
- $('loadCloud').onclick=async()=>{const button=$('loadCloud');button.disabled=true;try{await loadCloudLedger({signIn:!cloudLedger})}catch(error){feedback(error.message,'ledgerSource')}finally{button.disabled=false}};
+ $('loadCloud').onclick=async()=>{const button=$('loadCloud');button.disabled=true;try{await loadCloudLedger({signIn:!cloudLedger})}catch(error){feedback(error.message,'ledgerSource','error')}finally{button.disabled=false}};
  for(let m=1;m<=12;m++)$('month').add(new Option(m+' 月',m));
  reset(today);render();
  for(const id of ['year','month'])$(id).onchange=()=>{
@@ -797,19 +801,19 @@ async function init(){
    reset(date);
    let ledger;
    try{ledger=await loadCloudLedger()}catch(error){
-    render();$('ledgerSource').textContent='明細尚未更新，請點上方按鈕重新載入正式帳簿。';
-    feedback('已存入正式帳簿。明細與月報待更新：'+error.message);return;
+    render();feedback('明細尚未更新，請點上方按鈕重新載入正式帳簿。','ledgerSource','error');
+    feedback('已存入正式帳簿。明細與月報待更新：'+error.message,'status','error');return;
    }
    const token=$('publishToken').value.trim()||rememberedToken;
-   if(!token){feedback('已存入正式帳簿。設定發布權杖後可更新家長月報。');return}
+   if(!token){feedback('已存入正式帳簿。設定發布權杖後可更新家長月報。','status','error');return}
    const month=date.slice(0,7);
    const {values,details}=buildCloudMonth(ledger.rows,month,ledger.opening);
    try{
     feedback('已入帳，正在發布家長月報…');
     await publishMonth(token,month,values,details,{fromCloud:true});
     rememberToken(token);$('publishToken').value='';
-    feedback('已存入正式帳簿並提交家長月報，家長頁會在部署後更新。');
-   }catch(error){feedback('已存入正式帳簿。家長月報待發布：'+error.message);}
+    feedback('已存入正式帳簿並提交家長月報，家長頁會在部署後更新。','status','success');
+   }catch(error){feedback('已存入正式帳簿。家長月報待發布：'+error.message,'status','error');}
    return;
   }
   if(file&&(!media.has(file.type)||file.size>sizeLimit))throw new Error('請選擇 8 MB 以下的 JPG、PNG 或 PDF。');
@@ -821,15 +825,15 @@ async function init(){
   };
   await save({...state,rows:[...state.rows.filter(other=>other.id!==row.id),row]});
   reset(date);render();
-  feedback('已更新本機舊紀錄。');
+  feedback('已更新本機舊紀錄。','status','success');
  });
  operation('opening','submit',async()=>{
   await save({...state,opening:Math.round(Number($('balance').value)*100)});
-  render();feedback('已更新起始餘額。','toolStatus');
+  render();feedback('已更新起始餘額。','toolStatus','success');
  });
  operation('backup','click',()=>{
   jsonFile('xisong-ledger-backup.json',{version:1,...state});
-  feedback('已開始下載完整備份，請查看瀏覽器的下載項目。','toolStatus');
+  feedback('已開始下載完整備份，請查看瀏覽器的下載項目。','toolStatus','success');
  });
  operation('restore','change',async()=>{
   const file=$('restore').files[0];
@@ -847,7 +851,7 @@ async function init(){
     cursor.onsuccess=()=>{const item=cursor.result;if(item){if(String(item.key).startsWith('published:'))store.delete(item.key);item.continue()}};
     return cursor;
    });
-   await save({opening:data.opening,rows:data.rows,dues:data.dues||{},roster:data.roster||[]});reset(today);render();feedback('已還原帳本。','toolStatus');
+   await save({opening:data.opening,rows:data.rows,dues:data.dues||{},roster:data.roster||[]});reset(today);render();feedback('已還原帳本。','toolStatus','success');
   }finally{$('restore').value=''}
  });
  rememberToken('');
@@ -875,11 +879,11 @@ async function init(){
  });
  $('publish').addEventListener('submit',async event=>{
   event.preventDefault();
-  const status=$('publishStatus'),button=$('openPublish');
+  const button=$('openPublish');
   if(button.disabled)return;
-  if(!$('year').checkValidity()){status.textContent='請檢查所選月份。';return}
+  if(!$('year').checkValidity()){feedback('請檢查所選月份。','publishStatus','error');return}
   const token=$('publishToken').value.trim()||rememberedToken;
-  if(!token){$('tokenField').hidden=false;$('publishToken').focus();status.textContent='請貼上權杖，再按 Enter 發布。';return}
+  if(!token){$('tokenField').hidden=false;$('publishToken').focus();feedback('請貼上權杖，再按 Enter 發布。','publishStatus','error');return}
   const month=monthKey();
   button.disabled=true;
   try{
@@ -887,10 +891,10 @@ async function init(){
    const {values,details}=buildCloudMonth(ledger.rows,month,ledger.opening);
    if(!confirm('發布 '+month+' 月報？\n'+describe(values)+'\n共 '+details.length+' 筆收支，包含用途及備註。'))return;
    rememberToken(token);$('publishToken').value='';$('tokenField').hidden=true;
-   status.textContent='發布中…';
+   feedback('發布中…','publishStatus');
    await publishMonth(token,month,values,details,{fromCloud:true});
-   status.textContent='已發布並讀回確認。家長頁會在部署完成後更新。';
-  }catch(error){status.textContent=error.message}
+   feedback('已發布並讀回確認。家長頁會在部署完成後更新。','publishStatus','success');
+  }catch(error){feedback(error.message,'publishStatus','error')}
   finally{button.disabled=false}
  });
  operation('summary','click',async()=>{
@@ -904,6 +908,6 @@ async function init(){
   jsonFile('ledger-summary.json',mergeReport(reports,month,values,details));
  });
 }
-init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。'));
+init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。','status','error'));
 </script>
 </html>
