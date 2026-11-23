@@ -10,15 +10,12 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <header><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1><p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer" style="color:#fff;font-weight:700">開啟正式雲端帳本</a></p><p>正式收支請使用「登記正式收支」表單。</p></header>
 <nav aria-label="工作站功能"><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
 <div id="ledger">
-<section><h2>新增收支</h2>
-<p><a class="cloud-entry primary" href="https://script.google.com/macros/s/AKfycbzEgFoLSZ_XTZu21MLVSWYBLrnv5A59HZbPhDS3Vzn3rkyTPOA2AZA0BDHQepdeKoFdQQ/exec" target="_blank" rel="noopener noreferrer">登記正式收支</a></p>
-<p>儲存後會寫入雲端帳簿。家長月報目前仍由管理者發布。</p></section>
-<details class="ledger-advanced"><summary>本機帳本、備份與手動發布</summary>
 <section>
 <h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
 <div id="days" aria-label="月曆"></div><p id="totals"></p><p id="annual"></p>
 </section>
-<section><h2 id="entryTitle">新增本機收支</h2>
+<section><h2 id="entryTitle">新增收支</h2>
+<p>此處儲存目前只更新本機帳本。</p>
 
 <form id="entry">
 <label>日期<input id="date" type="date" required></label>
@@ -31,6 +28,8 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 </form>
 <p id="status" role="status"></p><h2 id="dayTitle"></h2><div id="records"></div>
 </section>
+<details class="ledger-advanced"><summary>備份與手動發布</summary>
+<p><a href="https://script.google.com/macros/s/AKfycbzEgFoLSZ_XTZu21MLVSWYBLrnv5A59HZbPhDS3Vzn3rkyTPOA2AZA0BDHQepdeKoFdQQ/exec" target="_blank" rel="noopener noreferrer">開啟現有雲端登記入口</a></p>
 <section class="ledger-tools"><h2>備份與家長月報</h2>
 <div class="ledger-actions">
 <button type="button" id="backup">備份帳本</button>
