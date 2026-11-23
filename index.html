@@ -98,7 +98,7 @@ async function storage(mode, operation){
  });
 }
 async function save(next){
- await storage('readwrite',store=>store.put(next,'data'));
+ await storage('readwrite',store=>store.put(next,'data:formal'));
  state=next;
  queueAuto();
 }
@@ -450,7 +450,18 @@ function initDues(){
  };
 }
 async function init(){
- state=await storage('readonly',store=>store.get('data'))||state;
+ state=await storage('readwrite',store=>{
+  const current=store.get('data:formal');
+  current.onsuccess=()=>{
+   if(current.result!==undefined)return;
+   const old=store.get('data');
+   old.onsuccess=()=>{
+    store.put({opening:0,rows:[],dues:old.result?.dues||{}},'data:formal');
+    store.delete('data');
+   };
+  };
+  return current;
+ })||await storage('readonly',store=>store.get('data:formal'));
  initDues();
  for(let m=1;m<=12;m++)$('month').add(new Option(m+' 月',m));
  reset(today);render();
