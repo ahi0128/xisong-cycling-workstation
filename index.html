@@ -83,18 +83,18 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <section id="dues" hidden>
 <h2>每月隊費繳納清單</h2>
 <label>繳費月份<input id="duesMonth" type="month" required></label>
-<p id="duesTotals"></p>
+<p id="duesRosterStatus" role="status"></p><p id="duesTotals"></p>
 <form id="duesAdd"><label>學生姓名或代號<input id="duesName" required maxlength="60"></label><button>加入本月清單</button></form>
 <button type="button" id="startDues">帶入固定名單</button>
 <button type="button" id="copyDues">帶入前一月名單</button>
-<details><summary>管理固定名單（新增／退隊）</summary>
-<p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit#gid=26062301" target="_blank" rel="noopener noreferrer">查看雲端固定名單</a> · <a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit#gid=26062302" target="_blank" rel="noopener noreferrer">登記每月隊費繳納</a></p>
+<details><summary>雲端固定名單與本機備援</summary>
+<p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit#gid=26062301" target="_blank" rel="noopener noreferrer">編輯雲端固定名單（新增／退隊）</a> · <a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit#gid=26062302" target="_blank" rel="noopener noreferrer">登記每月隊費繳納</a></p>
 <p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/export?format=csv&amp;gid=26062301" target="_blank" rel="noopener noreferrer">下載已建好的固定名單 CSV</a></p>
 <label>匯入固定名單<input id="rosterFile" type="file" accept=".csv,text/csv"></label>
 <form id="rosterAdd"><label>新增隊員姓名或代號<input id="rosterName" maxlength="60" required></label><button>加入固定名單</button></form>
 <div id="rosterRows"></div>
 </details>
-<p>每人每月 2,500 元。勾選已繳只更新管理清單；實收款請在收支帳本登錄一次。清單存在目前的瀏覽器，會隨完整備份保存。</p>
+<p>每人每月 2,500 元。勾選已繳只更新管理清單；實收款請在收支帳本登錄一次。固定名單從雲端載入。繳納狀態與本月調整存在目前的瀏覽器，可隨完整備份保存。</p>
 <p id="duesStatus" role="status"></p><div id="duesRows"></div>
 </section><section id="races" hidden><h2 id="raceTitle"></h2><div id="raceList" role="status"></div></section></main>
 <script>
@@ -284,7 +284,11 @@ async function switchView(view){
  $('ledger').hidden=view!=='ledger';
  $('dues').hidden=view!=='dues';
  $('races').hidden=view==='ledger'||view==='dues';
- if(view==='dues'){renderDues();return}
+ if(view==='dues'){
+  renderDues();
+  try{await loadDuesRoster()}catch(error){feedback('無法載入雲端固定名單：'+error.message,'duesRosterStatus','error')}
+  return;
+ }
  if(view==='ledger')return;
  const [title,path]=raceViews[view];
  const panel=$('raceList');
@@ -465,7 +469,25 @@ async function publishMonth(token,month,values,details,{fromCloud=false}={}){
 const monthlyDues=250000;
 function duesMonth(){return $('duesMonth').value}
 function validDuesMonth(month){return /^\d{4}-(0[1-9]|1[0-2])$/.test(month)}
-function duesList(month=duesMonth()){return state.dues?.[month]||[]}
+let cloudDuesRoster;
+async function loadDuesRoster(){
+ feedback('正在載入雲端固定名單…','duesRosterStatus');
+ await authorizeSheets();
+ const {values=[]}=await sheetsRequest('/values/'+encodeURIComponent("'隊費固定名單'!A:B"));
+ if(values[0]?.[0]?.trim()!=='姓名')throw new Error('找不到姓名欄。');
+ const names=[...new Set(values.slice(1).map(row=>String(row?.[0]??'').trim()).filter(Boolean))];
+ if(!validRoster(names))throw new Error('雲端名單有格式錯誤。');
+ cloudDuesRoster=names;
+ renderDues();
+ feedback('已載入雲端固定名單，共 '+names.length+' 人。','duesRosterStatus','success');
+}
+function duesList(month=duesMonth()){
+ const saved=state.dues?.[month]||[];
+ if(!cloudDuesRoster||month!==duesMonth())return saved.filter(item=>!item.excluded);
+ const statuses=new Map(saved.map(item=>[item.name,item]));
+ const fixed=cloudDuesRoster.map(name=>statuses.get(name)||{name,paid:false});
+ return [...fixed,...saved.filter(item=>!cloudDuesRoster.includes(item.name))].filter(item=>!item.excluded);
+}
 function validDues(data){
  return data===undefined||(data&&typeof data==='object'&&!Array.isArray(data)&&Object.entries(data).every(([month,items])=>
   validDuesMonth(month)&&Array.isArray(items)&&items.every(item=>item&&typeof item.name==='string'&&item.name.trim()&&item.name.length<=60&&
@@ -495,7 +517,12 @@ async function updateDues(items){
  const status=$('duesStatus');
  if(!validDuesMonth(month)){status.textContent='請選擇有效月份。';return false}
  try{
-  await save({...state,dues:{...state.dues,[month]:items}});
+  const names=new Set(items.map(item=>item.name));
+  const exclusions=(cloudDuesRoster||[]).filter(name=>!names.has(name)).map(name=>({name,paid:false,excluded:true}));
+  const fixed=new Set(cloudDuesRoster||[]);
+  const saved=items.filter(item=>!fixed.has(item.name)||item.paid||item.manual);
+  await save({...state,dues:{...state.dues,[month]:[...saved,...exclusions]}});
+
   renderDues();
   feedback('已儲存繳納清單。','duesStatus','success');
   return true;
@@ -563,7 +590,7 @@ function initDues(){
   if(!name||duesList().some(item=>item.name===name)){
    $('duesStatus').textContent='請輸入尚未加入本月的姓名或代號。';return;
   }
-  if(await updateDues([...duesList(),{name,paid:false}]))$('duesName').value='';
+  if(await updateDues([...duesList(),{name,paid:false,manual:true}]))$('duesName').value='';
  };
  $('copyDues').onclick=()=>{
   const month=duesMonth();
