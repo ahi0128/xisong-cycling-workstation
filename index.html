@@ -10,7 +10,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <header><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
 <button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
 <p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer" style="color:#fff;font-weight:700">開啟正式雲端帳本</a></p></header>
-<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
+<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
 <div id="ledger" hidden>
 <section>
 <h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
@@ -96,7 +96,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 </details>
 <p>每人每月 2,500 元。收款請從此頁登記。確認實收會同步雲端繳納清單，並以今天為收款日入帳。既有本機勾選須先核對是否已入帳。本月名單調整仍保存在目前瀏覽器。</p>
 <p id="duesStatus" role="status"></p><div id="duesRows"></div>
-</section><section id="races" hidden><h2 id="raceTitle"></h2><p><a href="https://ahi0128.github.io/xisong-cycling-parent/#team-calendar" target="_blank" rel="noopener noreferrer">查看家長頁的車隊參賽</a></p>
+</section><section id="races" hidden><h2 id="raceTitle"></h2><p id="teamRaceParentLink"><a href="https://ahi0128.github.io/xisong-cycling-parent/#team-calendar" target="_blank" rel="noopener noreferrer">查看家長頁的車隊參賽</a></p>
 <details id="racePublishSettings"><summary>賽程發布設定</summary><label>GitHub 發布權杖（與家長月報共用） <input id="raceToken" type="password" autocomplete="off" spellcheck="false"></label></details>
 <p id="raceStatus" role="status" hidden></p><div id="raceList"></div></section></main>
 <script>
@@ -274,13 +274,13 @@ function validRow(row){
     row.receipt.length<=Math.ceil(sizeLimit/3)*4+64));
 }
 const parentSite='https://ahi0128.github.io/xisong-cycling-parent/';
-const raceViews={team:['車隊參賽','team-races.json'],domestic:['國內賽事','races.json']};
+const raceViews={team:['車隊參賽','team-races.json'],domestic:['國內賽事','races.json'],international:['國際賽事','international-races.json']};
 const teamRaceEndpoint='https://api.github.com/repos/ahi0128/xisong-cycling-parent/contents/team-races.json';
 const raceKey=event=>JSON.stringify([event.title,event.start]);
 let teamRaceCache;
 let racePublishPending=false;
 async function readRaceFeed(path){
- const response=await fetch(parentSite+path,{cache:'no-store'});
+ const response=await fetch(path===raceViews.international[1]?path:parentSite+path,{cache:'no-store'});
  if(!response.ok)throw new Error('無法讀取賽程。');
  const feed=await response.json();
  if(!Array.isArray(feed.events))throw new Error('賽程格式不符。');
@@ -360,11 +360,15 @@ async function switchView(view){
  }
  if(view==='ledger')return;
  const [title,path]=raceViews[view];
+ const international=view==='international';
+ $('racePublishSettings').hidden=international;
+ $('teamRaceParentLink').hidden=international;
+ if(international)$('raceStatus').hidden=true;
  const panel=$('raceList');
  $('raceTitle').textContent=title;
  panel.textContent='載入中…';
  try{
-  const teamFeed=teamRaceCache||await readRaceFeed(raceViews.team[1]);
+  const teamFeed=international?{events:[]}:teamRaceCache||await readRaceFeed(raceViews.team[1]);
   const {events}=view==='team'?teamFeed:await readRaceFeed(path);
   const confirmed=new Set(teamFeed.events.map(raceKey));
   if(current!==raceRequest||activeView!==view)return;
@@ -373,12 +377,13 @@ async function switchView(view){
   if(!upcoming.length){panel.textContent='目前沒有已公告的即將舉行賽事。';return}
   const table=document.createElement('table');
   const head=table.createTHead().insertRow();
-  for(const title of ['確認參賽','比賽日期','賽事','地點','報名期限','連結']){
+  for(const title of (international?['比賽日期','賽事','地點','直播','官方資訊']:['確認參賽','比賽日期','賽事','地點','報名期限','連結'])){
    const th=document.createElement('th');th.scope='col';th.textContent=title;head.append(th);
   }
   const body=table.createTBody();
   for(const event of upcoming){
    const row=body.insertRow();
+   if(!international){
    const checkbox=document.createElement('input');
    checkbox.type='checkbox';
    checkbox.checked=confirmed.has(raceKey(event));
@@ -386,9 +391,21 @@ async function switchView(view){
    checkbox.setAttribute('aria-label','確認參賽：'+event.title+' '+event.start);
    checkbox.addEventListener('change',()=>toggleTeamRace(event,checkbox));
    row.insertCell().append(checkbox);
+   }
    row.insertCell().textContent=event.displayDate||(event.end&&event.end!==event.start?event.start+' 至 '+event.end:event.start);
    row.insertCell().textContent=[event.title,event.discipline,event.status].filter(Boolean).join(' · ');
    row.insertCell().textContent=event.venue||'待公告';
+   if(international){
+    const live=row.insertCell();
+    const official=row.insertCell();
+    for(const [cell,url,label,fallback] of [[live,event.liveUrl,'觀看直播','待公告'],[official,event.source,'官方賽程','—']]){
+     if(typeof url!=='string'||!/^https:\/\//i.test(url)){cell.textContent=fallback;continue}
+     const link=document.createElement('a');
+     link.href=url;link.textContent=label;link.target='_blank';link.rel='noopener noreferrer';
+     cell.append(link);
+    }
+    continue;
+   }
    const deadline=event.registrationDeadline;
    row.insertCell().textContent=[deadline&&deadline+(deadline<today?'（已截止）':''),event.registrationNote].filter(Boolean).join(' · ')||'待公告';
    const links=row.insertCell();
