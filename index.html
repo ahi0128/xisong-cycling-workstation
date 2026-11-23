@@ -505,14 +505,25 @@ async function recordDuesPayment(item){
   const date=paid?new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date()):'';
   const receiptMonth=(date||current.date).replaceAll('/','-').slice(0,7);
   const cell=value=>value===''?{}:{userEnteredValue:typeof value==='number'?{numberValue:value}:{stringValue:value}};
-  const write=(sheetId,rowIndex,fields)=>rowIndex===undefined?
-   {appendCells:{sheetId,rows:[{values:fields.map(cell)}],fields:'userEnteredValue'}}:
-   {updateCells:{start:{sheetId,rowIndex,columnIndex:0},rows:[{values:fields.map(cell)}],fields:'userEnteredValue'}};
+  const write=(sheetId,rowIndex,fields)=>{
+   const values=fields.map(cell);
+   const ledgerDate=sheetId===1013939567&&fields[0];
+   const dateFormat={numberFormat:{type:'DATE',pattern:'yyyy/mm/dd'}};
+   if(ledgerDate)values[0]=cell(Date.parse(ledgerDate)/86400000+25569);
+   if(rowIndex===undefined){
+    if(ledgerDate)values[0].userEnteredFormat=dateFormat;
+    const mask=ledgerDate?'userEnteredValue,userEnteredFormat.numberFormat':'userEnteredValue';
+    return [{appendCells:{sheetId,rows:[{values}],fields:mask}}];
+   }
+   const update={updateCells:{start:{sheetId,rowIndex,columnIndex:0},rows:[{values}],fields:'userEnteredValue'}};
+   if(!ledgerDate)return [update];
+   return [update,{updateCells:{start:{sheetId,rowIndex,columnIndex:0},rows:[{values:[{userEnteredFormat:dateFormat}]}],fields:'userEnteredFormat.numberFormat'}}];
+  };
   const requests=[];
   if(!values[0]?.[6])requests.push({updateCells:{start:{sheetId:1013939567,rowIndex:0,columnIndex:6},rows:[{values:[cell('登記識別碼')]}],fields:'userEnteredValue'}});
   requests.push(
-   write(26062302,current?.rowIndex,[month,item.name,monthlyDues/100,paid?monthlyDues/100:0,date,paid?'已繳':'未繳',current?.note||'']),
-   write(1013939567,linked[0],paid?[date,'隊費（'+month+'）',monthlyDues/100,'','','',id]:['','','','','','',id])
+   ...write(26062302,current?.rowIndex,[month,item.name,monthlyDues/100,paid?monthlyDues/100:0,date,paid?'已繳':'未繳',current?.note||'']),
+   ...write(1013939567,linked[0],paid?[date,'隊費（'+month+'）',monthlyDues/100,'','','',id]:['','','','','','',id])
   );
   await sheetsRequest(':batchUpdate',{method:'POST',body:JSON.stringify({requests})});
   written=true;
