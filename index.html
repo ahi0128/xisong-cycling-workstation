@@ -23,7 +23,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <label>品名／摘要<input id="title" required maxlength="180"></label>
 <label>金額（元）<input id="amount" type="number" min="0.01" max="100000000" step="0.01" required></label>
 <label>備註<input id="note" maxlength="400"></label>
-<label>雲端憑證連結（選填）<input id="receiptLink" type="url" maxlength="500"></label>
+<label>雲端憑證連結（選填） <a href="https://drive.google.com/drive/folders/1le9FRlhP1b2yKYFwFC3VL16lNc4dbQGs" target="_blank" rel="noopener noreferrer">開啟收支憑證資料夾</a><input id="receiptLink" type="url" maxlength="500"></label>
 <label>本機憑證（僅供編輯舊資料，最多 8 MB）<input id="receipt" type="file" accept="image/jpeg,image/png,application/pdf"></label>
 <button class="primary">儲存收支</button> <button type="button" id="cancel" hidden>取消編輯</button>
 </form>
@@ -182,7 +182,15 @@ function render(){
   const label=document.createElement('strong');
   label.textContent=(row.kind==='income'?'收入':'支出')+' ｜ '+row.title+' ｜ '+money(row.amount);
   item.append(label,document.createTextNode(row.note||''));
-  if(cloudLedger){$('records').append(item);continue}
+  if(cloudLedger){
+   if(row.receiptLink){
+    const link=document.createElement('a');
+    link.href=row.receiptLink;link.textContent='查看憑證';
+    link.target='_blank';link.rel='noopener noreferrer';
+    item.append(document.createTextNode(' '),link);
+   }
+   $('records').append(item);continue;
+  }
   item.append(button('編輯',()=>{
    reset(row.date);editing=row;
    for(const key of ['kind','title','note'])$(key).value=row[key];
@@ -556,7 +564,7 @@ function parseCloudRows([header,...rows]){
    const date=year?year+'-'+mm.padStart(2,'0')+'-'+dd.padStart(2,'0'):'';
    const title=row[1]?.trim(),credit=toCloudCents(row[2]),debit=toCloudCents(row[3]);
    if(!validDate(date)||!title||Boolean(credit)===Boolean(debit))throw new Error('請填日期、用途，以及單筆的收入或支出。');
-   return {date,kind:credit?'income':'expense',title,amount:credit||debit,note:row[4]||''};
+   return {date,kind:credit?'income':'expense',title,amount:credit||debit,note:row[4]||'',receiptLink:/^https:\/\//i.test(row[5]||'')?row[5]:''};
   }catch(error){throw new Error('第 '+(i+2)+' 列：'+error.message)}
  });
 }
