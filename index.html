@@ -8,7 +8,7 @@
 nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}#tokenField{width:min(100%,24rem)}#publishToken{width:100%}.ledger-advanced>summary{cursor:pointer;padding:.8rem 0} .receipt-fields{margin:.5rem 0 .75rem;min-width:0}.receipt-fields label{max-width:100%;min-width:0;margin-right:0}.receipt-fields input{box-sizing:border-box;max-width:100%;min-width:0}.receipt-fields input[type=file]{width:min(100%,32rem)}.receipt-fields summary{cursor:pointer;margin:.4rem 0}</style>
 <main>
 <header><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
-<button type="button" id="loadCloud">使用 Google 帳號登入</button><p id="ledgerSource" role="status">登入後即可查看正式帳簿。直接新增收支時，儲存也會提示登入。</p>
+<button type="button" id="loadCloud">使用 Google 帳號登入</button><p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
 <p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer" style="color:#fff;font-weight:700">開啟正式雲端帳本</a></p></header>
 <nav aria-label="工作站功能"><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
 <div id="ledger">
@@ -624,7 +624,7 @@ let sheetsToken, sheetsExpiry=0, pendingCloudEntry;
 const driveScope='https://www.googleapis.com/auth/drive';
 const receiptFolder='1le9FRlhP1b2yKYFwFC3VL16lNc4dbQGs';
 let sheetsHasDrive=false;
-async function authorizeSheets(withReceipt=false){
+async function authorizeSheets(withReceipt=false, requireDrive=withReceipt){
  if(Date.now()>=sheetsExpiry||(withReceipt&&!sheetsHasDrive)){
   if(!window.google?.accounts?.oauth2)throw new Error('Google 授權服務尚未載入，請重試。');
   const response=await new Promise((resolve,reject)=>{
@@ -637,7 +637,7 @@ async function authorizeSheets(withReceipt=false){
   if(response.error||!google.accounts.oauth2.hasGrantedAllScopes(response,sheetsScope))
    throw new Error('請授權工作站存取 Google 試算表。');
   sheetsHasDrive=google.accounts.oauth2.hasGrantedAllScopes(response,driveScope);
-  if(withReceipt&&!sheetsHasDrive)throw new Error('請完成 Google Drive 授權。');
+  if(requireDrive&&!sheetsHasDrive)throw new Error('請完成 Google Drive 授權。');
   sheetsToken=response.access_token;
   sheetsExpiry=Date.now()+Math.max(0,Number(response.expires_in)-60)*1000;
  }
@@ -652,8 +652,8 @@ async function sheetsRequest(path,options={}){
    response.status===401?'Google 授權已失效，請再按一次儲存。':'雲端帳簿請求失敗（'+response.status+'），請重試。');
   return response.json();
  }
-async function loadCloudLedger(){
- await authorizeSheets();
+async function loadCloudLedger({signIn=false}={}){
+ await authorizeSheets(signIn,false);
  const ranges=["'收支明細'!A1:G","'月結'!B2"].map(range=>'ranges='+encodeURIComponent(range)).join('&');
  const data=await sheetsRequest('/values:batchGet?'+ranges);
  const [entries,balance]=data.valueRanges;
@@ -768,7 +768,7 @@ async function init(){
   $('ledgerSource').textContent='目前顯示本機舊帳本。新增收支仍會寫入正式帳簿。';
   render();
  };
- $('loadCloud').onclick=async()=>{const button=$('loadCloud');button.disabled=true;try{await loadCloudLedger()}catch(error){feedback(error.message,'ledgerSource')}finally{button.disabled=false}};
+ $('loadCloud').onclick=async()=>{const button=$('loadCloud');button.disabled=true;try{await loadCloudLedger({signIn:!cloudLedger})}catch(error){feedback(error.message,'ledgerSource')}finally{button.disabled=false}};
  for(let m=1;m<=12;m++)$('month').add(new Option(m+' 月',m));
  reset(today);render();
  for(const id of ['year','month'])$(id).onchange=()=>{
