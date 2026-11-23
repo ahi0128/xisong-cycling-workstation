@@ -15,7 +15,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <div id="days" aria-label="月曆"></div><p id="totals"></p><p id="annual"></p>
 </section>
 <section><h2 id="entryTitle">新增收支</h2>
-<p>此處儲存目前只更新本機帳本。</p>
+<p>新增收支會寫入正式雲端帳簿。首次儲存時請選擇有帳簿編輯權限的 Google 帳號。</p><script src="https://accounts.google.com/gsi/client" async></script>
 
 <form id="entry">
 <label>日期<input id="date" type="date" required></label>
@@ -23,7 +23,8 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <label>品名／摘要<input id="title" required maxlength="180"></label>
 <label>金額（元）<input id="amount" type="number" min="0.01" max="100000000" step="0.01" required></label>
 <label>備註<input id="note" maxlength="400"></label>
-<label>憑證（JPG、PNG、PDF，最多 8 MB）<input id="receipt" type="file" accept="image/jpeg,image/png,application/pdf"></label>
+<label>雲端憑證連結（選填）<input id="receiptLink" type="url" maxlength="500"></label>
+<label>本機憑證（僅供編輯舊資料，最多 8 MB）<input id="receipt" type="file" accept="image/jpeg,image/png,application/pdf"></label>
 <button class="primary">儲存收支</button> <button type="button" id="cancel" hidden>取消編輯</button>
 </form>
 <p id="status" role="status"></p><h2 id="dayTitle"></h2><div id="records"></div>
@@ -562,6 +563,61 @@ function readCloudMonth(source,month,opening){
  details.sort((a,b)=>a.date.localeCompare(b.date));
  return {values:{opening,income,expense,closing:opening+income-expense},details};
 }
+const sheetsClientId='724575578653-0h3khvta20slmhrcp3dj5mn8g973k543.apps.googleusercontent.com';
+const sheetsEndpoint='https://sheets.googleapis.com/v4/spreadsheets/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8';
+const sheetsScope='https://www.googleapis.com/auth/spreadsheets';
+let sheetsToken, sheetsExpiry=0, pendingCloudEntry;
+
+async function writeCloudEntry(row){
+ if(Date.now()>=sheetsExpiry){
+  if(!window.google?.accounts?.oauth2)throw new Error('Google 授權服務尚未載入，請重試。');
+  const response=await new Promise((resolve,reject)=>{
+   const client=google.accounts.oauth2.initTokenClient({
+    client_id:sheetsClientId,scope:sheetsScope,
+    callback:resolve,error_callback:()=>reject(new Error('Google 授權視窗未完成，請重試。'))
+   });
+   client.requestAccessToken({prompt:'select_account'});
+  });
+  if(response.error||!google.accounts.oauth2.hasGrantedAllScopes(response,sheetsScope))
+   throw new Error('請授權工作站存取 Google 試算表。');
+  sheetsToken=response.access_token;
+  sheetsExpiry=Date.now()+Math.max(0,Number(response.expires_in)-60)*1000;
+ }
+ async function request(path,options={}){
+  const response=await fetch(sheetsEndpoint+path,{
+   ...options,headers:{Authorization:'Bearer '+sheetsToken,'Content-Type':'application/json'}
+  });
+  if(response.status===401)sheetsExpiry=0;
+  if(!response.ok)throw new Error(
+   response.status===403?'目前的 Google 帳號無法寫入，請確認帳簿編輯權限及 Sheets API 設定。':
+   response.status===401?'Google 授權已失效，請再按一次儲存。':'雲端帳簿請求失敗（'+response.status+'），請重試。');
+  return response.json();
+ }
+ const key=JSON.stringify(row);
+ if(pendingCloudEntry?.key!==key)pendingCloudEntry={key,id:crypto.randomUUID()};
+ const id=pendingCloudEntry.id;
+ const {values=[]}=await request('/values/'+encodeURIComponent("'收支明細'!A1:G"));
+ const headers=['日期','用途','收入（元）','支出（元）','備註','憑證連結'];
+ if(headers.some((label,i)=>values[0]?.[i]!==label)||
+    (values[0][6]&&values[0][6]!=='登記識別碼')||
+    (!values[0][6]&&values.slice(1).some(line=>line[6])))
+  throw new Error('正式帳簿欄位已變更，請聯絡管理者。');
+ if(values.slice(1).some(line=>line[6]===id))return;
+ const serial=Date.parse(row.date)/86400000+25569;
+ const number=n=>({userEnteredValue:{numberValue:n}});
+ const string=value=> value?{userEnteredValue:{stringValue:value}}:{};
+ const date={...number(serial),userEnteredFormat:{numberFormat:{type:'DATE',pattern:'yyyy/mm/dd'}}};
+ const sheetId=1013939567;
+ const requests=[];
+ if(!values[0][6])requests.push({updateCells:{start:{sheetId,rowIndex:0,columnIndex:6},
+  rows:[{values:[string('登記識別碼')]}],fields:'userEnteredValue'}});
+ requests.push({appendCells:{sheetId,rows:[{values:[
+  date,string(row.title),row.kind==='income'?number(row.amount/100):{},
+  row.kind==='expense'?number(row.amount/100):{},string(row.note),string(row.receiptLink),string(id)
+ ]}],fields:'userEnteredValue,userEnteredFormat.numberFormat'}});
+ await request(':batchUpdate',{method:'POST',body:JSON.stringify({requests})});
+}
+
 async function init(){
  state=await storage('readwrite',store=>{
   const current=store.get('data:formal');
@@ -587,6 +643,18 @@ async function init(){
  operation('entry','submit',async()=>{
   const date=$('date').value, file=$('receipt').files[0];
   if(!validDate(date)||!$('title').value.trim())throw new Error('請填寫有效日期及品名。');
+  if(!editing){
+   const amount=Math.round(Number($('amount').value)*100);
+   const receiptLink=$('receiptLink').value.trim();
+   if(file)throw new Error('正式登記請使用雲端憑證連結。');
+   if(receiptLink&&!/^https:\/\//i.test(receiptLink))throw new Error('請輸入 HTTPS 憑證連結。');
+   feedback('正在寫入正式帳簿…');
+   await writeCloudEntry({date,kind:$('kind').value,title:$('title').value.trim(),amount,note:$('note').value,receiptLink});
+   pendingCloudEntry=undefined;
+   $('receiptLink').value='';
+   reset(date);render();feedback('已存入正式帳簿。家長月報尚未發布。');
+   return;
+  }
   if(file&&(!media.has(file.type)||file.size>sizeLimit))throw new Error('請選擇 8 MB 以下的 JPG、PNG 或 PDF。');
   const row={
    id:editing?.id||crypto.randomUUID(),date,kind:$('kind').value,title:$('title').value.trim(),
@@ -596,7 +664,7 @@ async function init(){
   };
   await save({...state,rows:[...state.rows.filter(other=>other.id!==row.id),row]});
   reset(date);render();
-  feedback(autoSession?.month===date.slice(0,7)?'已儲存，正在排程同步家長月報。':'已儲存到帳本。請按「發布月報」同步這個月份。');
+  feedback('已更新本機舊紀錄。');
  });
  operation('opening','submit',async()=>{
   await save({...state,opening:Math.round(Number($('balance').value)*100)});
