@@ -11,7 +11,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <nav aria-label="工作站功能"><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
 <div id="ledger">
 <section>
-<h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
+<h2>選擇日期</h2><button type="button" id="loadCloud">載入正式帳簿</button><p id="ledgerSource" role="status">目前顯示本機舊資料。載入後可查看正式帳簿。</p><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
 <div id="days" aria-label="月曆"></div><p id="totals"></p><p id="annual"></p>
 </section>
 <section><h2 id="entryTitle">新增收支</h2>
@@ -36,13 +36,13 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <button type="button" id="backup">備份帳本</button>
 <button type="submit" form="publish" id="openPublish" class="primary">發布月報</button>
 </div>
-<p>備份會下載收支與憑證。發布使用正式帳本匯出的 CSV。</p>
+<p>備份會下載收支與憑證。發布預設直接讀取正式帳簿。</p>
 <div id="autoBar" hidden><p id="autoStatus" role="status"></p><button type="button" id="stopAuto">停止自動同步</button></div>
 <p id="toolStatus" role="status" hidden></p>
 <div id="publishPanel">
-<p>從正式帳本匯出「收支明細」CSV，再選取檔案。請使用完整明細，工作站會按所選月份重新計算。</p>
+<p>如需離線匯出，可使用下方 CSV 選項。</p>
 <p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/export?format=csv&amp;gid=1013939567" target="_blank" rel="noopener noreferrer">下載正式帳本收支明細 CSV</a></p>
-<label>收支明細 CSV<input id="cloudCsv" type="file" accept=".csv,text/csv"></label>
+<label>收支明細 CSV（選填）<input id="cloudCsv" type="file" accept=".csv,text/csv"></label>
 <label>帳本初始餘額（同月結 B2）<input id="cloudOpening" type="number" step="0.01" value="0" required></label>
 <h3 id="publishHeading">發布月報到家長頁</h3>
 <p id="publishPreview"></p><p id="publicDetails"></p>
@@ -117,9 +117,10 @@ async function save(next){
  state=next;
  queueAuto();
 }
+let cloudLedger;
 function totals(prefix){
- let opening=state.opening, income=0, expense=0;
- for(const row of state.rows){
+ let opening=cloudLedger?.opening??state.opening, income=0, expense=0;
+ for(const row of cloudLedger?.rows??state.rows){
   if(row.date.startsWith(prefix)) {
    if(row.kind==='income')income+=row.amount;
    else expense+=row.amount;
@@ -164,23 +165,24 @@ function render(){
  for(let i=0;i<offset;i++)$('days').append(document.createElement('span'));
  for(let day=1;day<=new Date(Date.UTC(y,m,0)).getUTCDate();day++){
   const target=key+'-'+pad(day);
-  const count=state.rows.filter(row=>row.date===target).length;
+  const count=(cloudLedger?.rows??state.rows).filter(row=>row.date===target).length;
   const node=button(day+(count?' · '+count:''),()=>{reset(target);render()});
   node.setAttribute('aria-pressed',String(target===date));
   $('days').append(node);
  }
  $('totals').textContent=key+' ｜ '+describe(totals(key));
  $('publishHeading').textContent='發布 '+key+' 月報';
- $('publishPreview').textContent='選取正式帳本 CSV 後，發布前會顯示金額供確認。';
+ $('publishPreview').textContent='發布前會從正式帳簿讀取最新資料並顯示金額供確認。';
  $('annual').textContent=y+' 年 ｜ '+describe(totals(String(y)));
  $('balance').value=state.opening/100;
  $('dayTitle').textContent=date+' 收支明細';
  $('records').replaceChildren();
- for(const row of state.rows.filter(row=>row.date===date)){
+ for(const row of (cloudLedger?.rows??state.rows).filter(row=>row.date===date)){
   const item=document.createElement('div');item.className='row';
   const label=document.createElement('strong');
   label.textContent=(row.kind==='income'?'收入':'支出')+' ｜ '+row.title+' ｜ '+money(row.amount);
   item.append(label,document.createTextNode(row.note||''));
+  if(cloudLedger){$('records').append(item);continue}
   item.append(button('編輯',()=>{
    reset(row.date);editing=row;
    for(const key of ['kind','title','note'])$(key).value=row[key];
@@ -543,22 +545,30 @@ function toCloudCents(value,signed=false){
  return result;
 }
 function readCloudMonth(source,month,opening){
- const [header,...rows]=csvRows(source);
+ return buildCloudMonth(parseCloudRows(csvRows(source)),month,opening);
+}
+function parseCloudRows([header,...rows]){
  if(!header||['日期','用途','收入（元）','支出（元）','備註','憑證連結'].some((label,i)=>header[i]?.trim()!==label))
   throw new Error('請下載正式帳本的「收支明細」CSV。');
- let income=0,expense=0;
- const details=[];
- for(const [i,row] of rows.entries()){
+ return rows.filter(row=>row.slice(0,6).some(Boolean)).map((row,i)=>{
   try{
    const [,year,mm,dd]=row[0].trim().match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/)||[];
    const date=year?year+'-'+mm.padStart(2,'0')+'-'+dd.padStart(2,'0'):'';
    const title=row[1]?.trim(),credit=toCloudCents(row[2]),debit=toCloudCents(row[3]);
    if(!validDate(date)||!title||Boolean(credit)===Boolean(debit))throw new Error('請填日期、用途，以及單筆的收入或支出。');
-   if(date.slice(0,7)<month){opening+=credit-debit;continue}
-   if(!date.startsWith(month+'-'))continue;
-   income+=credit;expense+=debit;
-   details.push({date,kind:credit?'income':'expense',category:title,amount:(credit||debit)/100,note:row[4]||''});
-  }catch(error){throw new Error('第 '+(i+2)+' 筆 CSV 列：'+error.message)}
+   return {date,kind:credit?'income':'expense',title,amount:credit||debit,note:row[4]||''};
+  }catch(error){throw new Error('第 '+(i+2)+' 列：'+error.message)}
+ });
+}
+function buildCloudMonth(rows,month,opening){
+ let income=0,expense=0;
+ const details=[];
+ for(const row of rows){
+  if(row.date.slice(0,7)<month){opening+=row.kind==='income'?row.amount:-row.amount;continue}
+  if(!row.date.startsWith(month+'-'))continue;
+  if(row.kind==='income')income+=row.amount;
+  else expense+=row.amount;
+  details.push({date:row.date,kind:row.kind,category:row.title,amount:row.amount/100,note:row.note});
  }
  details.sort((a,b)=>a.date.localeCompare(b.date));
  return {values:{opening,income,expense,closing:opening+income-expense},details};
@@ -568,7 +578,7 @@ const sheetsEndpoint='https://sheets.googleapis.com/v4/spreadsheets/1oKpiOXH6U_5
 const sheetsScope='https://www.googleapis.com/auth/spreadsheets';
 let sheetsToken, sheetsExpiry=0, pendingCloudEntry;
 
-async function writeCloudEntry(row){
+async function authorizeSheets(){
  if(Date.now()>=sheetsExpiry){
   if(!window.google?.accounts?.oauth2)throw new Error('Google 授權服務尚未載入，請重試。');
   const response=await new Promise((resolve,reject)=>{
@@ -583,7 +593,8 @@ async function writeCloudEntry(row){
   sheetsToken=response.access_token;
   sheetsExpiry=Date.now()+Math.max(0,Number(response.expires_in)-60)*1000;
  }
- async function request(path,options={}){
+}
+async function sheetsRequest(path,options={}){
   const response=await fetch(sheetsEndpoint+path,{
    ...options,headers:{Authorization:'Bearer '+sheetsToken,'Content-Type':'application/json'}
   });
@@ -593,10 +604,22 @@ async function writeCloudEntry(row){
    response.status===401?'Google 授權已失效，請再按一次儲存。':'雲端帳簿請求失敗（'+response.status+'），請重試。');
   return response.json();
  }
+async function loadCloudLedger(){
+ await authorizeSheets();
+ const ranges=["'收支明細'!A1:G","'月結'!B2"].map(range=>'ranges='+encodeURIComponent(range)).join('&');
+ const data=await sheetsRequest('/values:batchGet?'+ranges);
+ const [entries,balance]=data.valueRanges;
+ cloudLedger={rows:parseCloudRows(entries.values??[]),opening:toCloudCents(balance.values?.[0]?.[0],true)};
+ $('ledgerSource').textContent='目前顯示正式雲端帳簿。';
+ render();
+ return cloudLedger;
+}
+async function writeCloudEntry(row){
+ await authorizeSheets();
  const key=JSON.stringify(row);
  if(pendingCloudEntry?.key!==key)pendingCloudEntry={key,id:crypto.randomUUID()};
  const id=pendingCloudEntry.id;
- const {values=[]}=await request('/values/'+encodeURIComponent("'收支明細'!A1:G"));
+ const {values=[]}=await sheetsRequest('/values/'+encodeURIComponent("'收支明細'!A1:G"));
  const headers=['日期','用途','收入（元）','支出（元）','備註','憑證連結'];
  if(headers.some((label,i)=>values[0]?.[i]!==label)||
     (values[0][6]&&values[0][6]!=='登記識別碼')||
@@ -615,7 +638,7 @@ async function writeCloudEntry(row){
   date,string(row.title),row.kind==='income'?number(row.amount/100):{},
   row.kind==='expense'?number(row.amount/100):{},string(row.note),string(row.receiptLink),string(id)
  ]}],fields:'userEnteredValue,userEnteredFormat.numberFormat'}});
- await request(':batchUpdate',{method:'POST',body:JSON.stringify({requests})});
+ await sheetsRequest(':batchUpdate',{method:'POST',body:JSON.stringify({requests})});
 }
 
 async function init(){
@@ -632,6 +655,7 @@ async function init(){
   return current;
  })||await storage('readonly',store=>store.get('data:formal'));
  initDues();
+ $('loadCloud').onclick=async()=>{const button=$('loadCloud');button.disabled=true;try{await loadCloudLedger()}catch(error){feedback(error.message,'ledgerSource')}finally{button.disabled=false}};
  for(let m=1;m<=12;m++)$('month').add(new Option(m+' 月',m));
  reset(today);render();
  for(const id of ['year','month'])$(id).onchange=()=>{
@@ -652,7 +676,8 @@ async function init(){
    await writeCloudEntry({date,kind:$('kind').value,title:$('title').value.trim(),amount,note:$('note').value,receiptLink});
    pendingCloudEntry=undefined;
    $('receiptLink').value='';
-   reset(date);render();feedback('已存入正式帳簿。家長月報尚未發布。');
+   reset(date);
+   try{await loadCloudLedger();feedback('已存入正式帳簿。可用「發布月報」更新家長頁。');}catch(error){render();feedback('已存入正式帳簿。明細重新載入失敗：'+error.message);}
    return;
   }
   if(file&&(!media.has(file.type)||file.size>sizeLimit))throw new Error('請選擇 8 MB 以下的 JPG、PNG 或 PDF。');
@@ -721,14 +746,14 @@ async function init(){
   const status=$('publishStatus'),button=$('openPublish');
   if(button.disabled)return;
   const file=$('cloudCsv').files[0];
-  if(!file){status.textContent='請先選取正式帳本的收支明細 CSV。';$('cloudCsv').focus();return}
-  if(!$('year').checkValidity()||!$('cloudOpening').checkValidity()){status.textContent='請檢查月份及帳本初始餘額。';return}
+  if(!$('year').checkValidity()||(file&&!$('cloudOpening').checkValidity())){status.textContent='請檢查月份及帳本初始餘額。';return}
   const token=$('publishToken').value.trim()||rememberedToken;
   if(!token){$('tokenField').hidden=false;$('publishToken').focus();status.textContent='請貼上權杖，再按 Enter 發布。';return}
   const month=monthKey(),opening=toCloudCents($('cloudOpening').value,true);
   button.disabled=true;
   try{
-   const {values,details}=readCloudMonth(await file.text(),month,opening);
+   const ledger=file?null:await loadCloudLedger();
+   const {values,details}=file?readCloudMonth(await file.text(),month,opening):buildCloudMonth(ledger.rows,month,ledger.opening);
    if(!details.length)throw new Error('所選月份沒有交易，未發布。');
    if(!confirm('發布 '+month+' 月報？\n'+describe(values)+'\n共 '+details.length+' 筆收支，包含用途及備註。'))return;
    rememberToken(token);$('publishToken').value='';$('tokenField').hidden=true;
