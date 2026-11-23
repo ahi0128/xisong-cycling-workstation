@@ -24,7 +24,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <label>金額（元）<input id="amount" type="number" min="0.01" max="100000000" step="0.01" required></label>
 <label>備註<input id="note" maxlength="400"></label>
 <label>雲端憑證連結（選填） <a href="https://drive.google.com/drive/folders/1le9FRlhP1b2yKYFwFC3VL16lNc4dbQGs" target="_blank" rel="noopener noreferrer">開啟收支憑證資料夾</a><input id="receiptLink" type="url" maxlength="500"></label>
-<label>拍照或選擇憑證（JPG、PNG、PDF，最多 8 MB）<input id="receipt" type="file" accept="image/jpeg,image/png,application/pdf"></label>
+<label>拍照或選擇憑證（JPG、PNG、PDF，正式登記最多 5 MB）<input id="receipt" type="file" accept="image/jpeg,image/png,application/pdf"></label>
 <button class="primary">儲存收支</button> <button type="button" id="cancel" hidden>取消編輯</button>
 </form>
 <p id="status" role="status"></p><h2 id="dayTitle"></h2><div id="records"></div>
@@ -711,7 +711,7 @@ async function init(){
   if(!editing){
    const amount=Math.round(Number($('amount').value)*100);
    const receiptLink=$('receiptLink').value.trim();
-   if(file&&(!media.has(file.type)||file.size>sizeLimit))throw new Error('請選擇 8 MB 以下的 JPG、PNG 或 PDF。');
+   if(file&&(!media.has(file.type)||file.size>5000000))throw new Error('請選擇 5 MB 以下的 JPG、PNG 或 PDF。');
    if(file&&receiptLink)throw new Error('請擇一使用憑證檔案或雲端連結。');
    if(receiptLink&&!/^https:\/\//i.test(receiptLink))throw new Error('請輸入 HTTPS 憑證連結。');
    feedback('正在寫入正式帳簿…');
