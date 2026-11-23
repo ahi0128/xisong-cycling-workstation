@@ -386,7 +386,7 @@ async function verifyPublicationBase(reports,month,values,details){
   throw new Error('已保留家長頁原月報。這個瀏覽器的帳本和已發布版本不一致，請使用原裝置的完整帳本核對。');
  }
 }
-async function publishMonth(token,month,values,details){
+async function publishMonth(token,month,values,details,{fromCloud=false}={}){
  const endpoint='https://api.github.com/repos/ahi0128/xisong-cycling-parent/contents/ledger-summary.json';
  const headers={Authorization:'Bearer '+token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'};
  const current=await fetch(endpoint+'?ref=main',{headers,cache:'no-store',redirect:'error'});
@@ -396,7 +396,7 @@ async function publishMonth(token,month,values,details){
  const source=new TextDecoder().decode(Uint8Array.from(atob(file.content),character=>character.charCodeAt(0)));
  const reports=JSON.parse(source).reports;
  const report=mergeReport(reports,month,values,details);
- await verifyPublicationBase(reports,month,values,details);
+ if(!fromCloud)await verifyPublicationBase(reports,month,values,details);
  const payload=new TextEncoder().encode(JSON.stringify(report,null,2)+'\n');
  const content=btoa(Array.from(payload,byte=>String.fromCharCode(byte)).join(''));
  const result=await fetch(endpoint,{
@@ -648,7 +648,7 @@ async function deleteCloudEntry(row,control){
   if(!token){feedback('已刪除正式帳簿紀錄。家長月報待發布。');return}
   const month=row.date.slice(0,7);
   const {values:totals,details}=buildCloudMonth(ledger.rows,month,ledger.opening);
-  await publishMonth(token,month,totals,details);
+  await publishMonth(token,month,totals,details,{fromCloud:true});
   rememberToken(token);$('publishToken').value='';
   feedback('已刪除正式帳簿紀錄並提交更新後的家長月報。');
  }catch(error){
@@ -765,7 +765,7 @@ async function init(){
    const {values,details}=buildCloudMonth(ledger.rows,month,ledger.opening);
    try{
     feedback('已入帳，正在發布家長月報…');
-    await publishMonth(token,month,values,details);
+    await publishMonth(token,month,values,details,{fromCloud:true});
     rememberToken(token);$('publishToken').value='';
     feedback('已存入正式帳簿並提交家長月報，家長頁會在部署後更新。');
    }catch(error){feedback('已存入正式帳簿。家長月報待發布：'+error.message);}
@@ -847,7 +847,7 @@ async function init(){
    if(!confirm('發布 '+month+' 月報？\n'+describe(values)+'\n共 '+details.length+' 筆收支，包含用途及備註。'))return;
    rememberToken(token);$('publishToken').value='';$('tokenField').hidden=true;
    status.textContent='發布中…';
-   await publishMonth(token,month,values,details);
+   await publishMonth(token,month,values,details,{fromCloud:true});
    status.textContent='已發布並讀回確認。家長頁會在部署完成後更新。';
   }catch(error){status.textContent=error.message}
   finally{button.disabled=false}
