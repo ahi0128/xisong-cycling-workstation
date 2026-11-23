@@ -70,7 +70,14 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <label>繳費月份<input id="duesMonth" type="month" required></label>
 <p id="duesTotals"></p>
 <form id="duesAdd"><label>學生姓名或代號<input id="duesName" required maxlength="60"></label><button>加入本月清單</button></form>
+<button type="button" id="startDues">帶入固定名單</button>
 <button type="button" id="copyDues">帶入前一月名單</button>
+<details><summary>管理固定名單（新增／退隊）</summary>
+<p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/export?format=csv&amp;gid=26062301" target="_blank" rel="noopener noreferrer">下載已建好的固定名單 CSV</a></p>
+<label>匯入固定名單<input id="rosterFile" type="file" accept=".csv,text/csv"></label>
+<form id="rosterAdd"><label>新增隊員姓名或代號<input id="rosterName" maxlength="60" required></label><button>加入固定名單</button></form>
+<div id="rosterRows"></div>
+</details>
 <p>每人每月 2,500 元。勾選已繳只更新管理清單；實收款請在收支帳本登錄一次。清單存在目前的瀏覽器，會隨完整備份保存。</p>
 <p id="duesStatus" role="status"></p><div id="duesRows"></div>
 </section><section id="races" hidden><h2 id="raceTitle"></h2><div id="raceList" role="status"></div></section></main>
@@ -397,6 +404,7 @@ function validDues(data){
    typeof item.paid==='boolean')&&new Set(items.map(item=>item.name)).size===items.length));
 }
 function renderDues(){
+ renderRoster();
  const items=duesList();
  const paid=items.filter(item=>item.paid).length;
  $('duesTotals').textContent='已繳 '+paid+' 人（'+money(paid*monthlyDues)+'）｜未繳 '+(items.length-paid)+' 人（'+money((items.length-paid)*monthlyDues)+'）';
@@ -428,7 +436,57 @@ async function updateDues(items){
   return false;
  }
 }
+function roster(){return state.roster||[]}
+function validRoster(names){
+ return Array.isArray(names)&&names.every(name=>typeof name==='string'&&name.trim()===name&&name.length>0&&name.length<=60)&&new Set(names).size===names.length;
+}
+async function saveRoster(names){
+ try{
+  if(!validRoster(names))throw new Error('姓名或代號格式不符，或有重複。');
+  await save({...state,roster:names});
+  renderRoster();
+  $('duesStatus').textContent='固定名單已儲存。';
+  return true;
+ }catch(error){$('duesStatus').textContent=error.message;return false}
+}
+function renderRoster(){
+ const list=$('rosterRows');
+ list.replaceChildren();
+ for(const name of roster()){
+  const row=document.createElement('div');
+  row.className='row';
+  row.append(document.createTextNode(name+' '),button('移出固定名單',()=>{
+   if(confirm('將 '+name+' 移出固定名單？既有月份紀錄會保留。'))return saveRoster(roster().filter(item=>item!==name));
+  }));
+  list.append(row);
+ }
+ if(!roster().length)list.textContent='尚未匯入固定名單。';
+}
+function initRoster(){
+ $('rosterAdd').onsubmit=async event=>{
+  event.preventDefault();
+  if(await saveRoster([...roster(),$('rosterName').value.trim()]))$('rosterName').value='';
+ };
+ $('rosterFile').onchange=async()=>{
+  const input=$('rosterFile'),file=input.files[0];
+  if(!file)return;
+  try{
+   const [header,...rows]=csvRows(await file.text());
+   if(header?.[0]?.trim()!=='姓名'||!rows.length)throw new Error('請選取固定名單 CSV。');
+   if(roster().length&&!confirm('以 CSV 取代固定名單？既有月份紀錄會保留。'))return;
+   await saveRoster(rows.map(row=>row[0].trim()));
+  }catch(error){$('duesStatus').textContent=error.message}
+  finally{input.value=''}
+ };
+ $('startDues').onclick=()=>{
+  const current=duesList();
+  const additions=roster().filter(name=>!current.some(entry=>entry.name===name));
+  if(!additions.length){$('duesStatus').textContent='沒有可加入的隊員。';return}
+  return updateDues([...current,...additions.map(name=>({name,paid:false}))]);
+ };
+}
 function initDues(){
+ initRoster();
  $('duesMonth').value=today.slice(0,7);
  $('duesMonth').onchange=()=>{$('duesStatus').textContent='';renderDues()};
  $('duesAdd').onsubmit=async event=>{
@@ -548,7 +606,7 @@ async function init(){
   try{
    const data=JSON.parse(await file.text());
    if(data.version!==1||!Number.isSafeInteger(data.opening)||Math.abs(data.opening)>10000000000||
-      !Array.isArray(data.rows)||!data.rows.every(validRow)||!validDues(data.dues)||
+      !Array.isArray(data.rows)||!data.rows.every(validRow)||!validDues(data.dues)||(data.roster!==undefined&&!validRoster(data.roster))||
       new Set(data.rows.map(row=>row.id)).size!==data.rows.length)throw new Error('備份格式不符。');
    if(!confirm('以備份取代本瀏覽器中的帳本？'))return;
    if(autoSession?.busy)throw new Error('請等這次同步完成，再還原備份。');
@@ -558,7 +616,7 @@ async function init(){
     cursor.onsuccess=()=>{const item=cursor.result;if(item){if(String(item.key).startsWith('published:'))store.delete(item.key);item.continue()}};
     return cursor;
    });
-   await save({opening:data.opening,rows:data.rows,dues:data.dues||{}});reset(today);render();feedback('已還原帳本。','toolStatus');
+   await save({opening:data.opening,rows:data.rows,dues:data.dues||{},roster:data.roster||[]});reset(today);render();feedback('已還原帳本。','toolStatus');
   }finally{$('restore').value=''}
  });
  rememberToken('');
