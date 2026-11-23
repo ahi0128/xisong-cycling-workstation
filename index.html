@@ -11,8 +11,8 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <nav aria-label="工作站功能"><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
 <div id="ledger">
 <section>
-<h2>選擇日期</h2><button type="button" id="loadCloud">載入正式帳簿</button><p id="ledgerSource" role="status">目前顯示本機舊資料。載入後可查看正式帳簿。</p><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
-<div id="days" aria-label="月曆"></div><p id="totals"></p><details><summary>查看年度合計</summary><p id="annual"></p></details>
+<h2>選擇日期</h2><button type="button" id="loadCloud">連線查看正式帳簿</button><p id="ledgerSource" role="status">尚未連線查看。也可以直接新增收支，儲存時會連線寫入正式帳簿。</p><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
+<div id="days" aria-label="月曆"></div><p id="totals"></p><details id="annualTotals" hidden><summary>查看年度合計</summary><p id="annual"></p></details>
 </section>
 <section><h2 id="entryTitle">新增收支</h2>
 <p>新增收支會寫入正式雲端帳簿。首次儲存時請選擇有帳簿編輯權限的 Google 帳號。此分頁已設定發布權杖時，儲存也會更新家長月報（含用途與備註）。</p><script src="https://accounts.google.com/gsi/client" async></script>
@@ -56,6 +56,7 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 </details>
 </div>
 <details class="ledger-settings"><summary>本機舊帳本備份與還原</summary>
+<button type="button" id="viewLocal" aria-pressed="false">查看本機舊帳本</button>
 <p>備份範圍為目前瀏覽器保存的舊帳本。</p>
 <button type="button" id="backup">備份本機帳本</button>
 <h3>設定起始餘額</h3>
@@ -125,9 +126,11 @@ async function save(next){
  queueAuto();
 }
 let cloudLedger;
+let showingLocalLedger=false;
 function totals(prefix){
- let opening=cloudLedger?.opening??state.opening, income=0, expense=0;
- for(const row of cloudLedger?.rows??state.rows){
+ const ledger=showingLocalLedger?state:cloudLedger;
+ let opening=ledger?.opening??0, income=0, expense=0;
+ for(const row of ledger?.rows??[]){
   if(row.date.startsWith(prefix)) {
    if(row.kind==='income')income+=row.amount;
    else expense+=row.amount;
@@ -167,30 +170,33 @@ function download(name,blob){
 function jsonFile(name,object){download(name,new Blob([JSON.stringify(object,null,2)],{type:'application/json'}))}
 function render(){
  const key=monthKey(), date=$('date').value;
+ const ledger=showingLocalLedger?state:cloudLedger;
+ const visibleRows=ledger?.rows??[];
  const y=Number($('year').value),m=Number($('month').value);
  $('days').replaceChildren(...[...'日一二三四五六'].map(day=>Object.assign(document.createElement('span'),{textContent:day})));
  const offset=new Date(Date.UTC(y,m-1,1)).getUTCDay();
  for(let i=0;i<offset;i++)$('days').append(document.createElement('span'));
  for(let day=1;day<=new Date(Date.UTC(y,m,0)).getUTCDate();day++){
   const target=key+'-'+pad(day);
-  const count=(cloudLedger?.rows??state.rows).filter(row=>row.date===target).length;
+  const count=visibleRows.filter(row=>row.date===target).length;
   const node=button(day+(count?' · '+count:''),()=>{reset(target);render()});
   node.setAttribute('aria-pressed',String(target===date));
   $('days').append(node);
  }
- $('totals').textContent=key+' ｜ '+describe(totals(key));
+ $('totals').textContent=ledger?key+' ｜ '+describe(totals(key)):'';
+ $('annualTotals').hidden=!ledger;
  $('publishHeading').textContent='發布 '+key+' 月報';
  $('publishPreview').textContent='發布前會從正式帳簿讀取最新資料並顯示金額供確認。';
  $('annual').textContent=y+' 年 ｜ '+describe(totals(String(y)));
  $('balance').value=state.opening/100;
  $('dayTitle').textContent=date+' 收支明細';
  $('records').replaceChildren();
- for(const row of (cloudLedger?.rows??state.rows).filter(row=>row.date===date)){
+ for(const row of visibleRows.filter(row=>row.date===date)){
   const item=document.createElement('div');item.className='row';
   const label=document.createElement('strong');
   label.textContent=(row.kind==='income'?'收入':'支出')+' ｜ '+row.title+' ｜ '+money(row.amount);
   item.append(label,document.createTextNode(row.note||''));
-  if(cloudLedger){
+  if(!showingLocalLedger){
    if(row.receiptLink){
     const link=document.createElement('a');
     link.href=row.receiptLink;link.textContent='查看憑證';
@@ -216,7 +222,7 @@ function render(){
   }));
   $('records').append(item);
  }
- if(!$('records').children.length)$('records').textContent='當日尚無紀錄。';
+ if(!$('records').children.length)$('records').textContent=ledger?'當日尚無紀錄。':'連線後會顯示當日正式收支明細。';
 }
 function readReceipt(file){
  return new Promise((resolve,reject)=>{
@@ -650,6 +656,9 @@ async function loadCloudLedger(){
  const data=await sheetsRequest('/values:batchGet?'+ranges);
  const [entries,balance]=data.valueRanges;
  cloudLedger={rows:parseCloudRows(entries.values??[]),opening:toCloudCents(balance.values?.[0]?.[0],true)};
+ showingLocalLedger=false;
+ $('viewLocal').setAttribute('aria-pressed','false');
+ $('loadCloud').textContent='重新整理正式帳簿';
  $('ledgerSource').textContent='目前顯示正式雲端帳簿。';
  render();
  return cloudLedger;
@@ -751,6 +760,12 @@ async function init(){
   return current;
  })||await storage('readonly',store=>store.get('data:formal'));
  initDues();
+ $('viewLocal').onclick=()=>{
+  showingLocalLedger=true;
+  $('viewLocal').setAttribute('aria-pressed','true');
+  $('ledgerSource').textContent='目前顯示本機舊帳本。新增收支仍會寫入正式帳簿。';
+  render();
+ };
  $('loadCloud').onclick=async()=>{const button=$('loadCloud');button.disabled=true;try{await loadCloudLedger()}catch(error){feedback(error.message,'ledgerSource')}finally{button.disabled=false}};
  for(let m=1;m<=12;m++)$('month').add(new Option(m+' 月',m));
  reset(today);render();
@@ -780,7 +795,7 @@ async function init(){
    reset(date);
    let ledger;
    try{ledger=await loadCloudLedger()}catch(error){
-    render();$('ledgerSource').textContent='明細尚未更新，請按「載入正式帳簿」。';
+    render();$('ledgerSource').textContent='明細尚未更新，請點上方按鈕重新載入正式帳簿。';
     feedback('已存入正式帳簿。明細與月報待更新：'+error.message);return;
    }
    const token=$('publishToken').value.trim()||rememberedToken;
