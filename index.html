@@ -160,6 +160,7 @@ function setDate(date){
 }
 function reset(date){
  editing=null;
+ $('date').readOnly=false;
  $('entry').reset();
  $('receiptOptions').open=false;
  setDate(date);
@@ -208,7 +209,19 @@ function render(){
     link.target='_blank';link.rel='noopener noreferrer';
     item.append(document.createTextNode(' '),link);
    }
-   if(row.id)item.append(document.createTextNode(' '),button('刪除',event=>deleteCloudEntry(row,event.currentTarget)));
+   if(row.id){
+    item.append(document.createTextNode(' '),button('編輯',()=>{
+     reset(row.date);
+     editing={...row,cloud:true};
+     for(const key of ['kind','title','note','receiptLink'])$(key).value=row[key];
+     $('receiptOptions').open=Boolean(row.receiptLink);
+     $('amount').value=row.amount/100;
+     $('date').readOnly=true;
+     $('entryTitle').textContent='編輯正式收支';
+     $('cancel').hidden=false;
+     $('title').focus();
+    }),button('刪除',event=>deleteCloudEntry(row,event.currentTarget)));
+   }
    $('records').append(item);continue;
   }
   item.append(button('編輯',()=>{
@@ -724,19 +737,27 @@ async function uploadReceipt(file,id,row){
  if(!result.ok)throw new Error('憑證上傳失敗（'+result.status+'）。請確認 Drive API 及資料夾權限。');
  return link(await result.json());
 }
-async function writeCloudEntry(row,file){
+async function writeCloudEntry(row,file,original){
  await authorizeSheets(Boolean(file));
- const key=JSON.stringify([row,file&&[file.name,file.size,file.lastModified]]);
+ const key=JSON.stringify([row,original?.id,file&&[file.name,file.size,file.lastModified]]);
  if(pendingCloudEntry?.key!==key)pendingCloudEntry={key,id:crypto.randomUUID()};
- const id=pendingCloudEntry.id;
+ const id=original?.id||pendingCloudEntry.id;
  const {values=[]}=await sheetsRequest('/values/'+encodeURIComponent("'收支明細'!A1:G"));
  const headers=['日期','用途','收入（元）','支出（元）','備註','憑證連結'];
  if(headers.some((label,i)=>values[0]?.[i]!==label)||
     (values[0][6]&&values[0][6]!=='登記識別碼')||
     (!values[0][6]&&values.slice(1).some(line=>line[6])))
   throw new Error('正式帳簿欄位已變更，請聯絡管理者。');
- if(values.slice(1).some(line=>line[6]===id))return;
- const receiptLink=file?await uploadReceipt(file,id,row):row.receiptLink;
+ const matches=values.flatMap((line,index)=>index&&line[6]===id?[index]:[]);
+ if(!original&&matches.length)return;
+ if(original){
+  if(matches.length!==1)throw new Error('紀錄已被刪除或無法辨識，請重新載入正式帳簿。');
+  const [current]=parseCloudRows([values[0],values[matches[0]]]);
+  const fields=['date','kind','title','amount','note','receiptLink'];
+  if(!current||fields.some(field=>current[field]!==original[field]))
+   throw new Error('這筆紀錄已被更新，請重新載入後再編輯。');
+ }
+ const receiptLink=file?await uploadReceipt(file,pendingCloudEntry.id,row):row.receiptLink;
  const serial=Date.parse(row.date)/86400000+25569;
  const number=n=>({userEnteredValue:{numberValue:n}});
  const string=value=> value?{userEnteredValue:{stringValue:value}}:{};
@@ -745,10 +766,14 @@ async function writeCloudEntry(row,file){
  const requests=[];
  if(!values[0][6])requests.push({updateCells:{start:{sheetId,rowIndex:0,columnIndex:6},
   rows:[{values:[string('登記識別碼')]}],fields:'userEnteredValue'}});
- requests.push({appendCells:{sheetId,rows:[{values:[
+ const entry={sheetId,rows:[{values:[
   date,string(row.title),row.kind==='income'?number(row.amount/100):{},
   row.kind==='expense'?number(row.amount/100):{},string(row.note),string(receiptLink),string(id)
- ]}],fields:'userEnteredValue,userEnteredFormat.numberFormat'}});
+ ]}],fields:'userEnteredValue,userEnteredFormat.numberFormat'};
+ if(original){
+  const {sheetId,...cells}=entry;
+  requests.push({updateCells:{...cells,start:{sheetId,rowIndex:matches[0],columnIndex:0}}});
+ }else requests.push({appendCells:entry});
  await sheetsRequest(':batchUpdate',{method:'POST',body:JSON.stringify({requests})});
 }
 
@@ -788,14 +813,16 @@ async function init(){
  operation('entry','submit',async()=>{
   const date=$('date').value, file=$('receipt').files[0];
   if(!validDate(date)||!$('title').value.trim())throw new Error('請填寫有效日期及品名。');
-  if(!editing){
+  if(!editing||editing.cloud){
+   const original=editing?.cloud?editing:undefined;
+   if(original&&date!==original.date)throw new Error('編輯正式收支時請保留原日期。');
    const amount=Math.round(Number($('amount').value)*100);
    const receiptLink=$('receiptLink').value.trim();
    if(file&&(!media.has(file.type)||file.size>5000000))throw new Error('請選擇 5 MB 以下的 JPG、PNG 或 PDF。');
-   if(file&&receiptLink)throw new Error('請擇一使用憑證檔案或雲端連結。');
+   if(file&&receiptLink&&receiptLink!==original?.receiptLink)throw new Error('請擇一使用憑證檔案或雲端連結。');
    if(receiptLink&&!/^https:\/\//i.test(receiptLink))throw new Error('請輸入 HTTPS 憑證連結。');
    feedback('正在寫入正式帳簿…');
-   await writeCloudEntry({date,kind:$('kind').value,title:$('title').value.trim(),amount,note:$('note').value,receiptLink},file);
+   await writeCloudEntry({date,kind:$('kind').value,title:$('title').value.trim(),amount,note:$('note').value,receiptLink},file,original);
    pendingCloudEntry=undefined;
    $('receiptLink').value='';
    reset(date);
