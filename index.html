@@ -655,7 +655,14 @@ async function deleteCloudEntry(row,control){
   feedback((removed?'已刪除正式帳簿紀錄，明細或家長月報待更新：':'刪除未確認，請先重新載入帳簿：')+error.message);
  }finally{control.disabled=false}
 }
-async function uploadReceipt(file,id){
+function receiptFilename(row,file,id){
+ const extensions={'image/jpeg':'jpg','image/png':'png','application/pdf':'pdf'};
+ const title=Array.from(row.title.replace(/[\\/:*?"<>|\u0000-\u001f]+/g,' ').replace(/\s+/g,' ').trim()).slice(0,60).join('')||'未填用途';
+ const kind=row.kind==='income'?'收入':'支出';
+ const amount=(row.amount/100).toFixed(2).replace(/\.00$/,'');
+ return [row.date,kind,title,amount+'元',id.slice(0,8)].join('_')+'.'+extensions[file.type];
+}
+async function uploadReceipt(file,id,row){
  const headers={Authorization:'Bearer '+sheetsToken};
  const query=new URLSearchParams({
   q:"'"+receiptFolder+"' in parents and trashed=false and appProperties has { key='ledgerEntry' and value='"+id+"' }",
@@ -667,7 +674,7 @@ async function uploadReceipt(file,id){
  const link=item=>item.webViewLink||'https://drive.google.com/open?id='+item.id;
  if(saved)return link(saved);
  const boundary='ledger_'+id;
- const metadata=JSON.stringify({name:id+'-'+file.name,parents:[receiptFolder],appProperties:{ledgerEntry:id}});
+ const metadata=JSON.stringify({name:receiptFilename(row,file,id),parents:[receiptFolder],appProperties:{ledgerEntry:id}});
  const body=new Blob([
   '--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metadata+'\r\n',
   '--'+boundary+'\r\nContent-Type: '+file.type+'\r\n\r\n',file,'\r\n--'+boundary+'--\r\n'
@@ -690,7 +697,7 @@ async function writeCloudEntry(row,file){
     (!values[0][6]&&values.slice(1).some(line=>line[6])))
   throw new Error('正式帳簿欄位已變更，請聯絡管理者。');
  if(values.slice(1).some(line=>line[6]===id))return;
- const receiptLink=file?await uploadReceipt(file,id):row.receiptLink;
+ const receiptLink=file?await uploadReceipt(file,id,row):row.receiptLink;
  const serial=Date.parse(row.date)/86400000+25569;
  const number=n=>({userEnteredValue:{numberValue:n}});
  const string=value=> value?{userEnteredValue:{stringValue:value}}:{};
