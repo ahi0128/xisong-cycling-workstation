@@ -15,13 +15,18 @@ header h1{font-size:clamp(1.35rem,3vw,2rem);line-height:1.25}
 #ledgerSource{margin:.65rem 0 0}
 button:focus-visible,a:focus-visible{outline:2px solid #376ed0;outline-offset:3px}
 header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
-@media(max-width:540px){#workstationNav a{margin-inline-start:0}main{padding:.65rem}header,section{padding-inline:.9rem}}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}#tokenField{width:min(100%,24rem)}#publishToken{width:100%}.ledger-advanced>summary{cursor:pointer;padding:.8rem 0} .receipt-fields{margin:.5rem 0 .75rem;min-width:0}.receipt-fields label{max-width:100%;min-width:0;margin-right:0}.receipt-fields input{box-sizing:border-box;max-width:100%;min-width:0}.receipt-fields input[type=file]{width:min(100%,32rem)}.receipt-fields summary{cursor:pointer;margin:.4rem 0} [data-result=success],[data-result=error]{display:block;width:fit-content;max-width:100%;padding:.4rem .6rem;border-radius:6px;font-weight:700;overflow-wrap:anywhere}[data-result=success]{color:#166534;background:#dcfce7}[data-result=error]{color:#991b1b;background:#fee2e2}.ledger-income strong{color:#166534}.ledger-expense strong{color:#991b1b}.dues-paid,.dues-unpaid{padding-inline:.65rem;font-weight:700}.dues-paid{background:#dcfce7;color:#166534}.dues-unpaid{background:#fee2e2;color:#991b1b}</style>
+@media(max-width:540px){#workstationNav a{margin-inline-start:0}main{padding:.65rem}header,section{padding-inline:.9rem}}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}#tokenField{width:min(100%,24rem)}#publishToken{width:100%}.ledger-advanced>summary{cursor:pointer;padding:.8rem 0} .receipt-fields{margin:.5rem 0 .75rem;min-width:0}.receipt-fields label{max-width:100%;min-width:0;margin-right:0}.receipt-fields input{box-sizing:border-box;max-width:100%;min-width:0}.receipt-fields input[type=file]{width:min(100%,32rem)}.receipt-fields summary{cursor:pointer;margin:.4rem 0} [data-result=success],[data-result=error]{display:block;width:fit-content;max-width:100%;padding:.4rem .6rem;border-radius:6px;font-weight:700;overflow-wrap:anywhere}[data-result=success]{color:#166534;background:#dcfce7}[data-result=error]{color:#991b1b;background:#fee2e2}.ledger-income strong{color:#166534}.ledger-expense strong{color:#991b1b}.dues-paid,.dues-unpaid{padding-inline:.65rem;font-weight:700}.dues-paid{background:#dcfce7;color:#166534}.dues-unpaid{background:#fee2e2;color:#991b1b}#equipmentForm,.equipment-heading,.equipment-row{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem 1rem}
+#equipmentForm{align-items:end}#equipmentForm label{margin:0;max-width:100%}#equipmentForm input{max-width:100%}
+.equipment-heading{justify-content:space-between;margin-top:1.2rem}
+.equipment-row>div{flex:1;min-width:min(12rem,100%);overflow-wrap:anywhere}
+#equipment details{margin-top:1rem}#equipment button{min-height:2.75rem}
+</style>
 <main>
 <header><p class="site-label">管理工作站</p><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
 <div class="header-actions"><button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer">開啟正式雲端帳本</a></div>
 <p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
 </header>
-<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
+<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="equipment" aria-pressed="false">器材借用</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
 <div id="ledger" hidden>
 <section>
 <h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
@@ -107,6 +112,17 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 </details>
 <p>每人每月 2,500 元。收款請從此頁登記。確認實收會同步雲端繳納清單，並以今天為收款日入帳。既有本機勾選須先核對是否已入帳。本月名單調整仍保存在目前瀏覽器。</p>
 <p id="duesStatus" role="status"></p><div id="duesRows"></div>
+</section><section id="equipment" hidden>
+<h2>器材借用</h2>
+<form id="equipmentForm">
+<label>器材／編號<input id="equipmentItem" required maxlength="100"></label>
+<label>借用人<input id="equipmentBorrower" required maxlength="60"></label>
+<button class="primary">登記借出</button>
+</form>
+<p id="equipmentStatus" role="status" hidden></p>
+<div class="equipment-heading"><h3>借用中</h3><button id="equipmentRefresh" type="button">重新整理</button></div>
+<div id="equipmentOpen"></div>
+<details><summary>已歸還紀錄</summary><div id="equipmentReturned"></div></details>
 </section><section id="races" hidden><h2 id="raceTitle"></h2><p id="teamRaceParentLink"><a href="https://ahi0128.github.io/xisong-cycling-parent/#team-calendar" target="_blank" rel="noopener noreferrer">查看家長頁的車隊參賽</a></p>
 <details id="racePublishSettings"><summary>賽程發布設定</summary><label>GitHub 發布權杖（與家長月報共用） <input id="raceToken" type="password" autocomplete="off" spellcheck="false"></label></details>
 <p id="raceStatus" role="status" hidden></p><div id="raceList"></div></section></main>
@@ -355,6 +371,77 @@ async function toggleTeamRace(event,checkbox){
 }
 let activeView='ledger';
 let raceRequest=0;
+const equipmentHeaders=["登記識別碼","器材","借用人","借出時間","歸還時間"];
+const equipmentRange=range=>'/values/'+encodeURIComponent("'器材借用'!"+range);
+let equipmentBusy=false;
+const equipmentTime=value=>new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short'}).format(new Date(value));
+async function readEquipment(){
+ const {values=[]}=await sheetsRequest(equipmentRange('A1:E'));
+ if(equipmentHeaders.some((title,index)=>values[0]?.[index]!==title))throw new Error('器材借用分頁欄位不符。');
+ return values.slice(1).flatMap(([id,item,borrower,out,back],index)=>id?[{id,item,borrower,out,back,row:index+2}]:[]);
+}
+async function refreshEquipment(){
+ const records=await readEquipment();
+ for(const [target,returned] of [['equipmentOpen',false],['equipmentReturned',true]]){
+  const list=$(target);
+  list.replaceChildren();
+  const entries=records.filter(record=>Boolean(record.back)===returned)
+   .sort((a,b)=>(b.back||b.out).localeCompare(a.back||a.out));
+  if(!entries.length)list.textContent=returned?'尚無歸還紀錄。':'目前沒有借出的器材。';
+  for(const record of entries){
+   const line=document.createElement('div');
+   line.className='row equipment-row';
+   const info=document.createElement('div');
+   const name=document.createElement('strong');
+   name.textContent=record.item+' ｜ '+record.borrower;
+   info.append(name,document.createTextNode('借出 '+equipmentTime(record.out)+(record.back?' ｜ 歸還 '+equipmentTime(record.back):'')));
+   line.append(info);
+   if(!returned)line.append(button('標記歸還',()=>runEquipment(async()=>{
+    const current=(await readEquipment()).find(entry=>entry.id===record.id);
+    if(!current)throw new Error('找不到這筆借用紀錄。');
+    if(!current.back){
+     const response=await sheetsRequest(equipmentRange('E'+current.row)+'?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[[new Date().toISOString()]]})});
+     if(response.updatedCells!==1)throw new Error('無法確認歸還結果。');
+    }
+    await refreshEquipment();
+   },'已標記歸還。')));
+   list.append(line);
+  }
+ }
+}
+async function runEquipment(action,message){
+ if(equipmentBusy)return;
+ equipmentBusy=true;
+ const status='equipmentStatus';
+ feedback('正在讀取雲端借用紀錄…',status);
+ const section=$('equipment');
+ for(const control of section.querySelectorAll('input,button'))control.disabled=true;
+ try{
+  await authorizeSheets();
+  await action();
+  if(message)feedback(message,status,'success');
+  else $(status).hidden=true;
+ }catch(error){feedback(error.message,status,'error')}
+ finally{
+  equipmentBusy=false;
+  for(const control of section.querySelectorAll('input,button'))control.disabled=false;
+ }
+}
+$('equipmentRefresh').onclick=()=>runEquipment(refreshEquipment);
+$('equipmentForm').onsubmit=event=>{
+ event.preventDefault();
+ const form=event.currentTarget;
+ const item=$('equipmentItem').value.trim(),borrower=$('equipmentBorrower').value.trim();
+ if(!item||!borrower){feedback('請填寫器材與借用人。','equipmentStatus','error');return}
+ return runEquipment(async()=>{
+  const response=await sheetsRequest(equipmentRange('A1:E')+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{
+   method:'POST',body:JSON.stringify({values:[[crypto.randomUUID(),item,borrower,new Date().toISOString(),'']]})
+  });
+  if(response.updates?.updatedRows!==1)throw new Error('無法確認借出結果。');
+  form.reset();
+  try{await refreshEquipment()}catch{throw new Error('已登記借出，但清單載入失敗，請按重新整理。')}
+ },'已登記借出。');
+};
 async function switchView(view){
  activeView=view;
  const current=++raceRequest;
@@ -363,7 +450,9 @@ async function switchView(view){
  }
  $('ledger').hidden=view!=='ledger';
  $('dues').hidden=view!=='dues';
- $('races').hidden=view==='ledger'||view==='dues';
+ $('equipment').hidden=view!=='equipment';
+ $('races').hidden=!Object.hasOwn(raceViews,view);
+ if(view==='equipment'){await runEquipment(refreshEquipment);return}
  if(view==='dues'){
   renderDues();
   try{await loadDuesRoster()}catch(error){feedback('無法載入雲端固定名單：'+error.message,'duesRosterStatus','error')}
