@@ -664,6 +664,10 @@ async function init(){
  };
  $('date').onchange=()=>{if(validDate($('date').value)){setDate($('date').value);render()}};
  $('cancel').onclick=()=>{reset($('date').value);render()};
+ $('entry').addEventListener('keydown',event=>{
+  if(event.key==='Enter'&&!event.isComposing&&event.target instanceof HTMLInputElement)
+   event.preventDefault();
+ });
  operation('entry','submit',async()=>{
   const date=$('date').value, file=$('receipt').files[0];
   if(!validDate(date)||!$('title').value.trim())throw new Error('請填寫有效日期及品名。');
@@ -677,7 +681,7 @@ async function init(){
    pendingCloudEntry=undefined;
    $('receiptLink').value='';
    reset(date);
-   try{await loadCloudLedger();feedback('已存入正式帳簿。可用「發布月報」更新家長頁。');}catch(error){render();feedback('已存入正式帳簿。明細重新載入失敗：'+error.message);}
+   try{await loadCloudLedger();feedback('已存入正式帳簿。可用「發布月報」更新家長頁。');}catch(error){render();$('ledgerSource').textContent='明細尚未更新，請按「載入正式帳簿」。';feedback('已存入正式帳簿。明細重新載入失敗：'+error.message);}
    return;
   }
   if(file&&(!media.has(file.type)||file.size>sizeLimit))throw new Error('請選擇 8 MB 以下的 JPG、PNG 或 PDF。');
