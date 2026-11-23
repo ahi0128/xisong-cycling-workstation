@@ -1,0 +1,84 @@
+{
+  "events": [
+    {
+      "title": "環澳賽（男子）",
+      "start": "2027-01-19",
+      "end": "2027-01-24",
+      "venue": "澳洲",
+      "discipline": "公路 · UCI WorldTour",
+      "source": "https://www.uci.org/competition-details/2027/ROA/79669"
+    },
+    {
+      "title": "環澳賽（女子）",
+      "start": "2027-01-22",
+      "end": "2027-01-24",
+      "venue": "澳洲",
+      "discipline": "公路 · UCI Women’s WorldTour",
+      "source": "https://www.uci.org/competition-hub/2027-uci-womens-worldtour/3l9WW2aKOWDNgwyU04QFeH?tab=races-results"
+    },
+    {
+      "title": "卡德爾・埃文斯大洋路賽（女子）",
+      "start": "2027-01-30",
+      "end": "2027-01-30",
+      "venue": "澳洲",
+      "discipline": "公路 · UCI Women’s WorldTour",
+      "source": "https://www.uci.org/competition-details/2027/ROA/79673"
+    },
+    {
+      "title": "卡德爾・埃文斯大洋路賽（男子）",
+      "start": "2027-01-31",
+      "end": "2027-01-31",
+      "venue": "澳洲",
+      "discipline": "公路 · UCI WorldTour",
+      "source": "https://www.uci.org/pressrelease/the-uci-management-committee-reviews-the-development-of-cycling-in-india-and-modifies-provisions-governing-the-participation-of-belarusian-and-russian-athletes-in-international-competitions-in-line-with-the-recommendations-of-the-ioc/3gcQrTKviMYusno70LIePJ"
+    },
+    {
+      "title": "環阿聯酋賽（女子）",
+      "start": "2027-02-03",
+      "end": "2027-02-06",
+      "venue": "阿拉伯聯合大公國",
+      "discipline": "公路 · UCI Women’s WorldTour",
+      "source": "https://www.uci.org/calendar/road/2ruOnavHX0dMGTCRozdYAU?discipline=ROA&searchTerm=uae&tab=calendar-upcoming"
+    },
+    {
+      "title": "白路賽（男子）",
+      "start": "2027-03-06",
+      "end": "2027-03-06",
+      "venue": "義大利錫耶納",
+      "discipline": "公路 · UCI WorldTour",
+      "source": "https://fr.uci.org/competition-details/2027/ROA/79677"
+    },
+    {
+      "title": "巴黎－尼斯",
+      "start": "2027-03-07",
+      "end": "2027-03-14",
+      "venue": "法國",
+      "discipline": "公路 · UCI WorldTour",
+      "source": "https://www.uci.org/pressrelease/the-uci-management-committee-reviews-the-development-of-cycling-in-india-and-modifies-provisions-governing-the-participation-of-belarusian-and-russian-athletes-in-international-competitions-in-line-with-the-recommendations-of-the-ioc/3gcQrTKviMYusno70LIePJ"
+    },
+    {
+      "title": "雙海賽",
+      "start": "2027-03-08",
+      "end": "2027-03-14",
+      "venue": "義大利",
+      "discipline": "公路 · UCI WorldTour",
+      "source": "https://www.uci.org/competition-details/2027/ROA/79678"
+    },
+    {
+      "title": "UCI 場地自由車世界盃加拿大站",
+      "start": "2027-04-02",
+      "end": "2027-04-04",
+      "venue": "加拿大 Mattamy National Cycling Centre",
+      "discipline": "場地 · UCI World Cup",
+      "source": "https://www.uci.org/discipline/track/5bBV0EMQvb3ZiTcXbKFLJz?discipline=PIS&searchTerm=world&tab=calendar"
+    },
+    {
+      "title": "UCI 場地自由車世界錦標賽",
+      "start": "2027-08-26",
+      "end": "2027-08-30",
+      "venue": "法國聖康坦伊夫林",
+      "discipline": "場地 · 世界錦標賽",
+      "source": "https://www.uci.org/competition-details/2027/PIS/79851"
+    }
+  ]
+}
