@@ -5,7 +5,7 @@
 <title>西松高中自由車隊｜帳務與賽事管理工作站</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#edf3f3;color:#153438;font:1rem system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:1rem}header,section{padding:1rem 1.25rem;border-radius:14px;margin-bottom:1rem;background:white}header{background:#153438;color:white}h1,h2{margin:.3rem 0 .8rem}label{display:inline-grid;gap:.25rem;margin:.25rem .5rem .25rem 0}button,input,select{font:inherit;padding:.45rem;border:1px solid #7d9595;border-radius:6px}button{background:#f4f8f8;cursor:pointer}button[aria-pressed=true],.primary{background:#146b60;color:white}#days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:.25rem;text-align:center}#days button{min-height:2.4rem;padding:.15rem}#totals{line-height:1.8}.row{padding:.75rem 0;border-top:1px solid #c8d6d6}.row strong{display:block;margin-bottom:.35rem;overflow-wrap:anywhere}.row button{margin:.2rem}#status{min-height:1.4em}#backup{margin:.3rem 0}
-nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}#tokenField{width:min(100%,24rem)}#publishToken{width:100%}.ledger-advanced>summary{cursor:pointer;padding:.8rem 0}</style>
+nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:.6rem;border-bottom:1px solid #c8d6d6;vertical-align:top}td a{display:block;white-space:nowrap}.ledger-actions{display:flex;flex-wrap:wrap;gap:.6rem}.ledger-actions button{margin:0}.ledger-tools details,.ledger-tools #publishPanel{border-top:1px solid #c8d6d6;padding-top:.8rem;margin-top:.8rem}.ledger-tools summary{cursor:pointer;font-weight:600}.ledger-tools input{max-width:100%}.ledger-tools label{max-width:100%} #toolStatus:not([hidden]){padding:.55rem .75rem;background:#edf3f3;border-radius:6px}#tokenField[hidden]{display:none}#tokenField{width:min(100%,24rem)}#publishToken{width:100%}.ledger-advanced>summary{cursor:pointer;padding:.8rem 0} .receipt-fields{margin:.5rem 0 .75rem;min-width:0}.receipt-fields label{max-width:100%;min-width:0;margin-right:0}.receipt-fields input{box-sizing:border-box;max-width:100%;min-width:0}.receipt-fields input[type=file]{width:min(100%,32rem)}.receipt-fields summary{cursor:pointer;margin:.4rem 0}</style>
 <main>
 <header><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1><p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer" style="color:#fff;font-weight:700">開啟正式雲端帳本</a></p></header>
 <nav aria-label="工作站功能"><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
@@ -23,8 +23,13 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <label>品名／摘要<input id="title" required maxlength="180"></label>
 <label>金額（元）<input id="amount" type="number" min="0.01" max="100000000" step="0.01" required></label>
 <label>備註<input id="note" maxlength="400"></label>
-<label>雲端憑證連結（選填） <a href="https://drive.google.com/drive/folders/1le9FRlhP1b2yKYFwFC3VL16lNc4dbQGs" target="_blank" rel="noopener noreferrer">開啟收支憑證資料夾</a><input id="receiptLink" type="url" maxlength="500"></label>
+<div class="receipt-fields">
 <label>拍照或選擇憑證（JPG、PNG、PDF，正式登記最多 5 MB）<input id="receipt" type="file" accept="image/jpeg,image/png,application/pdf"></label>
+<details id="receiptOptions"><summary>使用已上傳的憑證連結（選填）</summary>
+<label>憑證檔案網址<input id="receiptLink" type="url" maxlength="500"></label>
+<a href="https://drive.google.com/drive/folders/1le9FRlhP1b2yKYFwFC3VL16lNc4dbQGs" target="_blank" rel="noopener noreferrer">開啟收支憑證資料夾</a>
+</details>
+</div>
 <button class="primary">儲存收支</button> <button type="button" id="cancel" hidden>取消編輯</button>
 </form>
 <p id="status" role="status"></p><h2 id="dayTitle"></h2><div id="records"></div>
@@ -149,6 +154,7 @@ function setDate(date){
 function reset(date){
  editing=null;
  $('entry').reset();
+ $('receiptOptions').open=false;
  setDate(date);
  $('entryTitle').textContent='新增收支';
  $('cancel').hidden=true;
