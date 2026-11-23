@@ -397,11 +397,19 @@ async function publishMonth(token,month,values,details,{fromCloud=false}={}){
   if(file.encoding!=='base64'||!file.sha)throw new Error('無法驗證現有月報版本。');
   const source=new TextDecoder().decode(Uint8Array.from(atob(file.content),character=>character.charCodeAt(0)));
   const reports=JSON.parse(source).reports;
+  let ledger;
   if(fromCloud){
-   const ledger=await loadCloudLedger();
+   ledger=await loadCloudLedger();
    ({values,details}=buildCloudMonth(ledger.rows,month,ledger.opening));
   }
   const report=mergeReport(reports,month,values,details);
+  if(ledger){
+   for(const later of report.reports.filter(item=>item.month>month)){
+    const {values:balance}=buildCloudMonth(ledger.rows,later.month,ledger.opening);
+    later.opening=balance.opening/100;
+    later.closing=(balance.opening+Math.round(later.income*100)-Math.round(later.expense*100))/100;
+   }
+  }
   if(!fromCloud)await verifyPublicationBase(reports,month,values,details);
   const payload=new TextEncoder().encode(JSON.stringify(report,null,2)+'\n');
   const content=btoa(Array.from(payload,byte=>String.fromCharCode(byte)).join(''));
@@ -418,7 +426,9 @@ async function publishMonth(token,month,values,details,{fromCloud=false}={}){
   const saved=await verification.json();
   const decoded=new TextDecoder().decode(Uint8Array.from(atob(saved.content),character=>character.charCodeAt(0)));
   if(decoded!==new TextDecoder().decode(payload))throw new Error('GitHub 回讀的月報與送出內容不同。');
-  await storage('readwrite',store=>store.put(reportFingerprint(report.reports.find(item=>item.month===month)),'published:'+month));
+  try{
+   await storage('readwrite',store=>store.put(reportFingerprint(report.reports.find(item=>item.month===month)),'published:'+month));
+  }catch(error){console.warn('無法在此瀏覽器保存月報版本。',error);}
   return update.commit.sha;
  }
 }
