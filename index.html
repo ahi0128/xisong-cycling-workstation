@@ -29,21 +29,16 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 </form>
 <p id="status" role="status"></p><h2 id="dayTitle"></h2><div id="records"></div>
 </section>
-<details class="ledger-advanced"><summary>備份與手動發布</summary>
+<details class="ledger-advanced"><summary>發布設定與備援</summary>
 <p><a href="https://script.google.com/macros/s/AKfycbzEgFoLSZ_XTZu21MLVSWYBLrnv5A59HZbPhDS3Vzn3rkyTPOA2AZA0BDHQepdeKoFdQQ/exec" target="_blank" rel="noopener noreferrer">開啟現有雲端登記入口</a></p>
-<section class="ledger-tools"><h2>備份與家長月報</h2>
+<section class="ledger-tools"><h2>家長月報發布</h2>
 <div class="ledger-actions">
-<button type="button" id="backup">備份帳本</button>
-<button type="submit" form="publish" id="openPublish" class="primary">發布月報</button>
+<button type="submit" form="publish" id="openPublish" class="primary">重新發布所選月份</button>
 </div>
-<p>備份會下載收支與憑證。發布預設直接讀取正式帳簿。</p>
+<p>重新發布會讀取正式帳簿，可用於家長頁未更新時。</p>
 <div id="autoBar" hidden><p id="autoStatus" role="status"></p><button type="button" id="stopAuto">停止自動同步</button></div>
 <p id="toolStatus" role="status" hidden></p>
 <div id="publishPanel">
-<p>如需離線匯出，可使用下方 CSV 選項。</p>
-<p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/export?format=csv&amp;gid=1013939567" target="_blank" rel="noopener noreferrer">下載正式帳本收支明細 CSV</a></p>
-<label>收支明細 CSV（選填）<input id="cloudCsv" type="file" accept=".csv,text/csv"></label>
-<label>帳本初始餘額（同月結 B2）<input id="cloudOpening" type="number" step="0.01" value="0" required></label>
 <h3 id="publishHeading">發布月報到家長頁</h3>
 <p id="publishPreview"></p><p id="publicDetails"></p>
 <form id="publish"><label id="tokenField">GitHub 發布權杖<input id="publishToken" type="password" autocomplete="off" spellcheck="false"></label></form>
@@ -55,7 +50,9 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <p><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">到 GitHub 建立發布權杖</a></p>
 </details>
 </div>
-<details class="ledger-settings"><summary>帳本設定與還原</summary>
+<details class="ledger-settings"><summary>本機舊帳本備份與還原</summary>
+<p>備份範圍為目前瀏覽器保存的舊帳本。</p>
+<button type="button" id="backup">備份本機帳本</button>
 <h3>設定起始餘額</h3>
 <p>只在建立帳本或校正起始金額時使用。每月餘額會自動帶到次月。</p>
 <form id="opening"><label>第一筆紀錄前的餘額（元）<input id="balance" type="number" step=".01" min="-100000000" max="100000000" required></label><button>儲存餘額</button></form>
@@ -63,7 +60,12 @@ nav{margin-bottom:1rem;line-height:2.6}#raceList{overflow:auto}table{border-coll
 <p>選擇先前下載的備份檔，確認後會取代目前瀏覽器的帳本。</p>
 <label>帳本備份檔<input id="restore" type="file" accept=".json,application/json"></label>
 </details>
-<details class="ledger-settings"><summary>手動匯出月報</summary>
+<details class="ledger-settings"><summary>離線匯出月報（CSV）</summary>
+<p>要離線製作月報時，請下載完整收支明細再選取檔案。</p>
+<p><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/export?format=csv&amp;gid=1013939567" target="_blank" rel="noopener noreferrer">下載正式帳本收支明細 CSV</a></p>
+<label>收支明細 CSV（選填）<input id="cloudCsv" type="file" accept=".csv,text/csv"></label>
+<label>帳本初始餘額（同月結 B2）<input id="cloudOpening" type="number" step="0.01" value="0" required></label>
+
 <p>匯出所選月份的摘要。若已有家長月報檔，可先選取它以保留其他月份。</p>
 <label>既有月報檔（選填）<input id="existing" type="file" accept=".json,application/json"></label>
 <button type="button" id="summary">下載月報摘要</button>
@@ -827,15 +829,14 @@ async function init(){
   event.preventDefault();
   const status=$('publishStatus'),button=$('openPublish');
   if(button.disabled)return;
-  const file=$('cloudCsv').files[0];
-  if(!$('year').checkValidity()||(file&&!$('cloudOpening').checkValidity())){status.textContent='請檢查月份及帳本初始餘額。';return}
+  if(!$('year').checkValidity()){status.textContent='請檢查所選月份。';return}
   const token=$('publishToken').value.trim()||rememberedToken;
   if(!token){$('tokenField').hidden=false;$('publishToken').focus();status.textContent='請貼上權杖，再按 Enter 發布。';return}
-  const month=monthKey(),opening=toCloudCents($('cloudOpening').value,true);
+  const month=monthKey();
   button.disabled=true;
   try{
-   const ledger=file?null:await loadCloudLedger();
-   const {values,details}=file?readCloudMonth(await file.text(),month,opening):buildCloudMonth(ledger.rows,month,ledger.opening);
+   const ledger=await loadCloudLedger();
+   const {values,details}=buildCloudMonth(ledger.rows,month,ledger.opening);
    if(!confirm('發布 '+month+' 月報？\n'+describe(values)+'\n共 '+details.length+' 筆收支，包含用途及備註。'))return;
    rememberToken(token);$('publishToken').value='';$('tokenField').hidden=true;
    status.textContent='發布中…';
