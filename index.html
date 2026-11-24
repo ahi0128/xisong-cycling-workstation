@@ -122,6 +122,15 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <p id="equipmentStatus" role="status" hidden></p>
 <div class="equipment-heading"><h3>借用中</h3><button id="equipmentRefresh" type="button">重新整理</button></div>
 <div id="equipmentOpen"></div>
+<details><summary>新增器材</summary>
+<form id="assetForm">
+<label>器材編號<input name="code" maxlength="60" required></label>
+<label>品名<input name="title" maxlength="100" required></label>
+<label>類別<select name="category"></select></label>
+<label>數量<input name="quantity" type="number" min="1" step="1" value="1" required></label>
+<label>存放位置（選填）<input name="location" maxlength="100"></label>
+<button class="primary">儲存器材</button>
+</form></details>
 <details><summary>器材庫存</summary><label>類別<select id="equipmentCategory"></select></label><div id="equipmentStock"></div></details>
 <details><summary>已歸還紀錄</summary><div id="equipmentReturned"></div></details>
 </section><section id="races" hidden><h2 id="raceTitle"></h2><p id="teamRaceParentLink"><a href="https://ahi0128.github.io/xisong-cycling-parent/#team-calendar" target="_blank" rel="noopener noreferrer">查看家長頁的車隊參賽</a></p>
@@ -463,6 +472,55 @@ async function refreshEquipment(){
  }
 }
 $('equipmentCategory').onchange=renderEquipmentStock;
+const assetClasses=[
+ ['輪組',/輪組|碟輪|板輪|輪圈|前輪|後輪|花鼓|外胎|內胎/],
+ ['車架',/車架|前叉|場地車|公路車|整車/],
+ ['休息把套件',/休息把|延伸把|肘墊|\baerobar\b/i],
+ ['手把',/手把|彎把|龍頭|把立/],
+ ['坐墊／座管',/坐墊|座墊|座管|坐管/],
+ ['電子功率',/功率|碼表|車錶|心率|感測器|garmin|wahoo/i],
+ ['齒盤傳動',/齒盤|齒片|飛輪|大盤|曲柄|鏈條|變速/],
+ ['踏板',/踏板|卡踏|扣片/],
+ ['安全裝備',/安全帽|頭盔|護具|車燈|反光衣/],
+ ['工具維修',/工具|扳手|打氣筒|維修架|補胎/],
+ ['訓練設備',/訓練台|滾筒|測功台/],
+ ['運輸收納',/車袋|車箱|輪袋|收納|攜車架/]
+];
+function guessAssetCategory(title){
+ const matches=assetClasses.filter(([,pattern])=>pattern.test(title));
+ return matches.length===1?matches[0][0]:'其他';
+}
+const assetForm=$('assetForm');
+const assetTitle=assetForm.elements.namedItem('title');
+const assetCategory=assetForm.elements.namedItem('category');
+let manualAssetCategory=false;
+assetCategory.replaceChildren(new Option('其他','其他'),...assetClasses.map(([name])=>new Option(name,name)));
+assetTitle.addEventListener('input',()=>{
+ if(!manualAssetCategory)assetCategory.value=guessAssetCategory(assetTitle.value);
+});
+assetCategory.addEventListener('change',()=>{manualAssetCategory=true});
+assetForm.onsubmit=event=>{
+ event.preventDefault();
+ const fields=new FormData(assetForm);
+ const code=fields.get('code').trim(),name=fields.get('title').trim();
+ const quantity=Number(fields.get('quantity'));
+ return runEquipment(async()=>{
+  const {assets}=await equipmentSnapshot();
+  if(!code||!name||!Number.isSafeInteger(quantity)||quantity<1)throw new Error('請填寫器材編號、品名及正整數數量。');
+  const normalize=value=>String(value).normalize('NFKC').replace(/\s/g,'').toLowerCase();
+  if(assets.some(asset=>normalize(asset.code)===normalize(code)))throw new Error('此器材編號已存在。');
+  const range='/values/'+encodeURIComponent("'器材清單'!A1:F");
+  const values=[[code,name,fields.get('category'),quantity,fields.get('location').trim(),'']];
+  const result=await sheetsRequest(range+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{
+   method:'POST',body:JSON.stringify({values})
+  });
+  if(result.updates?.updatedRows!==1)throw new Error('無法確認新增結果。');
+  assetForm.reset();
+  manualAssetCategory=false;
+  try{await refreshEquipment()}catch{throw new Error('器材已新增，清單載入失敗，請按重新整理。')}
+ },'已新增器材並更新庫存。');
+};
+
 async function runEquipment(action,message){
  if(equipmentBusy)return;
  equipmentBusy=true;
