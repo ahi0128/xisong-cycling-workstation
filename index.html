@@ -26,7 +26,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <div class="header-actions"><button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer">開啟正式雲端帳本</a></div>
 <p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
 </header>
-<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="equipment" aria-pressed="false">器材借用</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
+<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="attendance" aria-pressed="false">差勤</button> <button data-view="equipment" aria-pressed="false">器材借用</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
 <div id="ledger" hidden>
 <section>
 <h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
@@ -112,7 +112,19 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 </details>
 <p>每人每月 2,500 元。收款請從此頁登記。確認實收會同步雲端繳納清單，並以今天為收款日入帳。既有本機勾選須先核對是否已入帳。本月名單調整仍保存在目前瀏覽器。</p>
 <p id="duesStatus" role="status"></p><div id="duesRows"></div>
-</section><section id="equipment" hidden>
+</section><section id="attendance" hidden>
+<h2>學生差勤</h2><p id="attendanceWeek"></p><div id="attendanceDays" class="ledger-actions" aria-label="本週日期"></div>
+<form id="attendanceForm">
+<label>日期<input id="attendanceDate" type="date" required></label>
+<label>時段<select id="attendanceSession"><option>晨操</option><option>下午訓練</option><option>週六團練</option><option>其他</option></select></label>
+<button id="attendanceToday" type="button">回到本週</button>
+<button id="attendanceAll" type="button">未登錄者標為到課</button>
+<p id="attendanceStatus" role="status" hidden></p>
+<div class="tablewrap"><table><thead><tr><th scope="col">姓名</th><th scope="col">本時段差勤</th></tr></thead><tbody id="attendanceRows"></tbody></table></div>
+<button class="primary" id="attendanceSave" type="submit">儲存差勤</button>
+</form>
+</section>
+<section id="equipment" hidden>
 <h2>器材借用</h2>
 <details><summary>新增器材</summary>
 <form id="assetForm">
@@ -583,6 +595,120 @@ $('equipmentForm').onsubmit=event=>{
   try{await refreshEquipment()}catch{throw new Error('已登記借出，但清單載入失敗，請按重新整理。')}
  },'已登記借出。');
 };
+
+const attendanceOptions=['','到課','缺課','遲到','早退','遲到及早退','請假'];
+const attendanceColumns=['日期','時段','姓名','差勤','登錄時間'];
+const attendanceDate=$('attendanceDate'),attendanceSession=$('attendanceSession');
+const attendanceRange='/values/'+encodeURIComponent("'學生差勤'!A1:E");
+let attendanceBusy=false,attendanceReady=false,attendanceNames=[],attendanceLog=[],attendanceOriginal=new Map();
+function currentAttendanceDate(){
+ return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
+}
+function attendanceWeekBounds(date){
+ const d=new Date(date+'T00:00:00Z');
+ d.setUTCDate(d.getUTCDate()-(d.getUTCDay()+6)%7);
+ const start=d.toISOString().slice(0,10);
+ d.setUTCDate(d.getUTCDate()+6);
+ return [start,d.toISOString().slice(0,10)];
+}
+function attendanceRecordsFor(date,session,log){
+ const entries=new Map();
+ for(const [day,slot,name,status] of log){
+  if(day===date&&slot===session&&name&&attendanceOptions.includes(status||''))entries.set(name,status||'');
+ }
+ return entries;
+}
+function renderAttendance(){
+ if(!attendanceDate.value)return;
+ const date=attendanceDate.value;
+ const [start,end]=attendanceWeekBounds(date);
+ $('attendanceWeek').textContent=start+' 至 '+end+(start===attendanceWeekBounds(currentAttendanceDate())[0]?'（本週）':'（歷史紀錄）');
+ const days=$('attendanceDays');days.replaceChildren();
+ const weekday=['一','二','三','四','五','六','日'];
+ for(let i=0;i<7;i++){
+  const d=new Date(start+'T00:00:00Z');d.setUTCDate(d.getUTCDate()+i);
+  const key=d.toISOString().slice(0,10);
+  const control=button((d.getUTCMonth()+1)+'/'+d.getUTCDate()+'（'+weekday[i]+'）',()=>{
+   attendanceDate.value=key;
+   if(i===5)attendanceSession.value='週六團練';
+   else if(attendanceSession.value==='週六團練')attendanceSession.value='晨操';
+   renderAttendance();
+  });
+  control.disabled=key>currentAttendanceDate();
+  control.setAttribute('aria-pressed',String(key===date));
+  days.append(control);
+ }
+ attendanceOriginal=attendanceRecordsFor(date,attendanceSession.value,attendanceLog);
+ const names=[...new Set([...attendanceNames,...attendanceOriginal.keys()])];
+ const list=$('attendanceRows');list.replaceChildren();
+ for(const name of names){
+  const row=list.insertRow();
+  row.insertCell().textContent=name;
+  const select=document.createElement('select');
+  select.dataset.student=name;
+  select.setAttribute('aria-label',name+' 差勤');
+  for(const status of attendanceOptions)select.add(new Option(status||'未登錄',status));
+  select.value=attendanceOriginal.get(name)||'';
+  row.insertCell().append(select);
+ }
+ $('attendanceSave').disabled=attendanceBusy||!attendanceReady||date>currentAttendanceDate()||!names.length;
+}
+function selectAttendanceToday(){
+ attendanceDate.max=currentAttendanceDate();
+ attendanceDate.value=attendanceDate.max;
+ attendanceSession.value=new Date(attendanceDate.value+'T00:00:00Z').getUTCDay()===6?'週六團練':'晨操';
+}
+async function runAttendance(action){
+ if(attendanceBusy)return;
+ attendanceBusy=true;
+ const dayControls=$('attendanceDays');
+ dayControls.inert=true;
+ const controls=$('attendanceForm');
+ for(const el of controls.querySelectorAll('input,select,button'))el.disabled=true;
+ try{await authorizeSheets();await action()}
+ catch(error){feedback(error.message,'attendanceStatus','error')}
+ finally{
+  attendanceBusy=false;
+  dayControls.inert=false;
+  for(const el of controls.querySelectorAll('input,select,button'))el.disabled=false;
+  $('attendanceSave').disabled=!attendanceReady||!attendanceDate.value||attendanceDate.value>currentAttendanceDate()||!$('attendanceRows').rows.length;
+ }
+}
+async function loadAttendance(){
+ if(!attendanceDate.value)selectAttendanceToday();
+ return runAttendance(async()=>{
+  const [roster,log]=await Promise.all([
+   sheetsRequest('/values/'+encodeURIComponent("'隊費固定名單'!A:A")),
+   sheetsRequest(attendanceRange)
+  ]);
+  if(roster.values?.[0]?.[0]?.trim()!=='姓名'||attendanceColumns.some((col,i)=>log.values?.[0]?.[i]!==col))throw new Error('雲端差勤或隊費名單欄位不符。');
+  attendanceNames=[...new Set(roster.values.slice(1).map(row=>String(row[0]||'').trim()).filter(Boolean))];
+  attendanceLog=log.values.slice(1);
+  attendanceReady=true;
+  renderAttendance();
+ });
+}
+selectAttendanceToday();
+attendanceDate.onchange=attendanceSession.onchange=renderAttendance;
+$('attendanceToday').onclick=()=>{selectAttendanceToday();return loadAttendance()};
+$('attendanceAll').onclick=()=>{
+ for(const select of $('attendanceRows').querySelectorAll('select'))if(!select.value)select.value='到課';
+};
+$('attendanceForm').onsubmit=event=>{
+ event.preventDefault();
+ if(!attendanceReady||!attendanceDate.value||attendanceDate.value>currentAttendanceDate())return;
+ const changes=[...$('attendanceRows').querySelectorAll('select')].filter(el=>el.value!==(attendanceOriginal.get(el.dataset.student)||''));
+ if(!changes.length){feedback('沒有需要儲存的變更。','attendanceStatus');return}
+ const vals=changes.map(el=>[attendanceDate.value,attendanceSession.value,el.dataset.student,el.value,new Date().toISOString()]);
+ return runAttendance(async()=>{
+  const result=await sheetsRequest(attendanceRange+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{method:'POST',body:JSON.stringify({values:vals})});
+  if(result.updates?.updatedRows!==vals.length)throw new Error('未能確認差勤寫入結果。請重新開啟差勤分頁核對。');
+  attendanceLog.push(...vals);
+  renderAttendance();
+  feedback('已儲存 '+vals.length+' 筆差勤。','attendanceStatus','success');
+ });
+};
+
 async function switchView(view){
  activeView=view;
  const current=++raceRequest;
@@ -592,7 +718,9 @@ async function switchView(view){
  $('ledger').hidden=view!=='ledger';
  $('dues').hidden=view!=='dues';
  $('equipment').hidden=view!=='equipment';
+ $('attendance').hidden=view!=='attendance';
  $('races').hidden=!Object.hasOwn(raceViews,view);
+ if(view==='attendance'){await loadAttendance();return}
  if(view==='equipment'){await runEquipment(refreshEquipment);return}
  if(view==='dues'){
   renderDues();
