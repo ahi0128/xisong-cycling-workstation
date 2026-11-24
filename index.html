@@ -115,13 +115,14 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 </section><section id="equipment" hidden>
 <h2>器材借用</h2>
 <form id="equipmentForm">
-<label>器材／編號<input id="equipmentItem" required maxlength="100"></label>
+<label>器材／編號<select id="equipmentItem" required><option value="">選擇器材</option></select></label>
 <label>借用人<input id="equipmentBorrower" required maxlength="60"></label>
-<button class="primary">登記借出</button>
+<label>數量<input id="equipmentQuantity" type="number" min="1" step="1" value="1" required></label><label>預計歸還日<input id="equipmentDue" type="date" required></label><button class="primary">登記借出</button>
 </form>
 <p id="equipmentStatus" role="status" hidden></p>
 <div class="equipment-heading"><h3>借用中</h3><button id="equipmentRefresh" type="button">重新整理</button></div>
 <div id="equipmentOpen"></div>
+<details><summary>器材庫存</summary><label>類別<select id="equipmentCategory"></select></label><div id="equipmentStock"></div></details>
 <details><summary>已歸還紀錄</summary><div id="equipmentReturned"></div></details>
 </section><section id="races" hidden><h2 id="raceTitle"></h2><p id="teamRaceParentLink"><a href="https://ahi0128.github.io/xisong-cycling-parent/#team-calendar" target="_blank" rel="noopener noreferrer">查看家長頁的車隊參賽</a></p>
 <details id="racePublishSettings"><summary>賽程發布設定</summary><label>GitHub 發布權杖（與家長月報共用） <input id="raceToken" type="password" autocomplete="off" spellcheck="false"></label></details>
@@ -371,51 +372,104 @@ async function toggleTeamRace(event,checkbox){
 }
 let activeView='ledger';
 let raceRequest=0;
-const equipmentHeaders=["登記識別碼","器材","借用人","借出時間","歸還時間"];
 const equipmentRange=range=>'/values/'+encodeURIComponent("'器材借用'!"+range);
 let equipmentBusy=false;
-const equipmentTime=value=>new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short'}).format(new Date(value));
+let equipmentAssets=[];
+const equipmentToday=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
+const equipmentTime=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)?value:new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short'}).format(new Date(value));
 async function readEquipment(){
- const {values=[]}=await sheetsRequest(equipmentRange('A1:E'));
- if(equipmentHeaders.some((title,index)=>values[0]?.[index]!==title))throw new Error('器材借用分頁欄位不符。');
- return values.slice(1).flatMap(([id,item,borrower,out,back],index)=>id?[{id,item,borrower,out,back,row:index+2}]:[]);
+ const {values=[]}=await sheetsRequest(equipmentRange('A1:J'));
+ if(values[0]?.[0]!=='登記識別碼'||values[0]?.[9]!=='備註')throw new Error('器材借用分頁欄位不符。');
+ return values.slice(1).flatMap(([id,item,borrower,out,back,code,due,quantity,returned,note],index)=>{
+  const qty=Number(quantity||1);
+  const received=returned!==undefined&&returned!==''?Number(returned):back?qty:0;
+  return id?[{id,item,borrower,out,back,code,due,qty,received,note,left:Math.max(0,qty-received),row:index+2}]:[];
+ });
+}
+async function equipmentSnapshot(){
+ const [records,{values=[]}]=await Promise.all([readEquipment(),sheetsRequest('/values/'+encodeURIComponent("'器材清單'!A1:F"))]);
+ if(values[0]?.[0]!=='物品編號')throw new Error('器材清單欄位不符。');
+ const outstanding=new Map();
+ for(const entry of records)outstanding.set(entry.code,(outstanding.get(entry.code)||0)+entry.left);
+ const assets=values.slice(1).filter(row=>row[0]).map(([code,name,category,total,location,note])=>{
+  const loaned=outstanding.get(code)||0;
+  return {code,name,category,total,location,note,loaned,available:Math.max(0,Number(total)-loaned)};
+ });
+ return {records,assets};
+}
+function renderEquipmentStock(){
+ const category=$('equipmentCategory').value;
+ const list=$('equipmentStock');
+ list.replaceChildren();
+ for(const a of equipmentAssets.filter(a=>!category||a.category===category)){
+  const line=document.createElement('div');line.className='row';
+  line.textContent=a.code+' ｜ '+a.name+' ｜ 可用 '+a.available+'/'+a.total+
+   (a.loaned>Number(a.total)?' ｜ 借出超出庫存，請核對':'')+
+   (a.location?' ｜ '+a.location:'')+(a.note?' ｜ '+a.note:'');
+  list.append(line);
+ }
 }
 async function refreshEquipment(){
- const records=await readEquipment();
+ const {records,assets}=await equipmentSnapshot();
+ equipmentAssets=assets;
+ const selector=$('equipmentItem'), previous=selector.value;
+ selector.replaceChildren(new Option('選擇器材',''),...assets.map(a=>{
+  const option=new Option(a.code+' ｜ '+a.name+'（可用 '+a.available+'）',a.code);
+  option.disabled=!a.available;return option;
+ }));
+ if(assets.some(a=>a.code===previous&&a.available))selector.value=previous;
+ const category=$('equipmentCategory'),previousCategory=category.value;
+ const categories=[...new Set(assets.map(a=>a.category).filter(Boolean))];
+ category.replaceChildren(new Option('全部',''),...categories.map(name=>new Option(name,name)));
+ if(categories.includes(previousCategory))category.value=previousCategory;
+ renderEquipmentStock();
+ const known=new Set(assets.map(a=>a.code));
  for(const [target,returned] of [['equipmentOpen',false],['equipmentReturned',true]]){
   const list=$(target);
   list.replaceChildren();
-  const entries=records.filter(record=>Boolean(record.back)===returned)
-   .sort((a,b)=>(b.back||b.out).localeCompare(a.back||a.out));
+  const entries=records.filter(record=>(record.left===0)===returned)
+   .sort((a,b)=>String(b.back||b.out).localeCompare(String(a.back||a.out)));
   if(!entries.length)list.textContent=returned?'尚無歸還紀錄。':'目前沒有借出的器材。';
   for(const record of entries){
-   const line=document.createElement('div');
-   line.className='row equipment-row';
+   const line=document.createElement('div');line.className='row equipment-row';
    const info=document.createElement('div');
    const name=document.createElement('strong');
-   name.textContent=record.item+' ｜ '+record.borrower;
-   info.append(name,document.createTextNode('借出 '+equipmentTime(record.out)+(record.back?' ｜ 歸還 '+equipmentTime(record.back):'')));
+   name.textContent=[record.code,record.item,record.borrower].filter(Boolean).join(' ｜ ');
+   const outDate=String(record.out||'').slice(0,10);
+   const review=!record.due||!outDate||record.due<outDate;
+   const status=returned?'已歸還':review?'期限待核對':record.due<equipmentToday()?'逾期':'借出中';
+   const date=record.out?'借出 '+equipmentTime(record.out):'借出日待補';
+   info.append(name,document.createTextNode(status+' ｜ '+date+(record.due?' ｜ 應還 '+record.due:'')+
+    ' ｜ 未還 '+record.left+'/'+record.qty+(record.back?' ｜ 最近歸還 '+equipmentTime(record.back):'')+
+    (record.code&&!known.has(record.code)?' ｜ 編號待核對':'')+(record.note?' ｜ '+record.note:'')));
    line.append(info);
-   if(!returned)line.append(button('標記歸還',()=>runEquipment(async()=>{
-    const current=(await readEquipment()).find(entry=>entry.id===record.id);
-    if(!current)throw new Error('找不到這筆借用紀錄。');
-    if(!current.back){
-     const response=await sheetsRequest(equipmentRange('E'+current.row)+'?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[[new Date().toISOString()]]})});
-     if(response.updatedCells!==1)throw new Error('無法確認歸還結果。');
-    }
-    await refreshEquipment();
-   },'已標記歸還。')));
+   if(!returned)line.append(button('登記歸還',()=>{
+    const answer=prompt('請輸入本次歸還數量',String(record.left));
+    if(answer===null)return;
+    const count=Number(answer);
+    return runEquipment(async()=>{
+     const current=(await readEquipment()).find(entry=>entry.id===record.id);
+     if(!current||!Number.isSafeInteger(count)||count<1||count>current.left)throw new Error('歸還數量須介於 1 與目前未還數量之間。');
+     const r=await sheetsRequest('/values:batchUpdate',{method:'POST',body:JSON.stringify({valueInputOption:'RAW',data:[
+      {range:"'器材借用'!E"+current.row,values:[[new Date().toISOString()]]},
+      {range:"'器材借用'!I"+current.row,values:[[current.received+count]]}
+     ]})});
+     if(r.totalUpdatedCells!==2)throw new Error('無法確認歸還結果。');
+     try{await refreshEquipment()}catch{throw new Error('已登記歸還，但清單載入失敗，請按重新整理。')}
+    },'已登記歸還。');
+   }));
    list.append(line);
   }
  }
 }
+$('equipmentCategory').onchange=renderEquipmentStock;
 async function runEquipment(action,message){
  if(equipmentBusy)return;
  equipmentBusy=true;
  const status='equipmentStatus';
  feedback('正在讀取雲端借用紀錄…',status);
  const section=$('equipment');
- for(const control of section.querySelectorAll('input,button'))control.disabled=true;
+ for(const control of section.querySelectorAll('input,select,button'))control.disabled=true;
  try{
   await authorizeSheets();
   await action();
@@ -424,18 +478,22 @@ async function runEquipment(action,message){
  }catch(error){feedback(error.message,status,'error')}
  finally{
   equipmentBusy=false;
-  for(const control of section.querySelectorAll('input,button'))control.disabled=false;
+  for(const control of section.querySelectorAll('input,select,button'))control.disabled=false;
  }
 }
 $('equipmentRefresh').onclick=()=>runEquipment(refreshEquipment);
 $('equipmentForm').onsubmit=event=>{
  event.preventDefault();
  const form=event.currentTarget;
- const item=$('equipmentItem').value.trim(),borrower=$('equipmentBorrower').value.trim();
- if(!item||!borrower){feedback('請填寫器材與借用人。','equipmentStatus','error');return}
+ const code=$('equipmentItem').value,borrower=$('equipmentBorrower').value.trim();
+ const qty=Number($('equipmentQuantity').value),due=$('equipmentDue').value;
  return runEquipment(async()=>{
-  const response=await sheetsRequest(equipmentRange('A1:E')+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{
-   method:'POST',body:JSON.stringify({values:[[crypto.randomUUID(),item,borrower,new Date().toISOString(),'']]})
+  const {assets}=await equipmentSnapshot();
+  const asset=assets.find(a=>a.code===code);
+  if(!asset||!borrower||!Number.isSafeInteger(qty)||qty<1||qty>asset.available)throw new Error('請確認器材、借用人及可用數量。');
+  if(!due||due<equipmentToday())throw new Error('預計歸還日不得早於今天。');
+  const response=await sheetsRequest(equipmentRange('A1:J')+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{
+   method:'POST',body:JSON.stringify({values:[[crypto.randomUUID(),asset.name,borrower,new Date().toISOString(),'',code,due,qty,0,'']]})
   });
   if(response.updates?.updatedRows!==1)throw new Error('無法確認借出結果。');
   form.reset();
