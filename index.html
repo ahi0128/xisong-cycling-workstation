@@ -20,6 +20,12 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 .equipment-heading{justify-content:space-between;margin-top:1.2rem}
 .equipment-row>div{flex:1;min-width:min(12rem,100%);overflow-wrap:anywhere}
 #equipment details{margin-top:1rem}#equipment button{min-height:2.75rem}
+.attendance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.8rem;margin:1rem 0}
+.attendance-group{border:1px solid #cad7ea;border-radius:8px;min-width:0}
+.attendance-group h3{margin:0;padding:.65rem .7rem;background:#e7eef9;border-radius:8px 8px 0 0}
+.attendance-student{display:flex;align-items:center;justify-content:space-between;gap:.35rem;padding:.45rem .55rem;border-top:1px solid #e2e9f2}
+.attendance-student select{max-width:61%;min-width:0}
+@media(max-width:760px){.attendance-grid{grid-template-columns:1fr}.attendance-student select{max-width:70%}}
 </style>
 <main>
 <header><p class="site-label">管理工作站</p><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
@@ -120,7 +126,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <button id="attendanceToday" type="button">回到本週</button>
 <button id="attendanceAll" type="button">未登錄者標為到課</button>
 <p id="attendanceStatus" role="status" hidden></p><p>年段依隊費固定名單顯示。舊紀錄若找不到對應名單，會標為「待確認」。</p>
-<div class="tablewrap"><table><thead><tr><th scope="col">姓名</th><th scope="col">年段</th><th scope="col">本時段差勤</th></tr></thead><tbody id="attendanceRows"></tbody></table></div>
+<div id="attendanceRows" class="attendance-grid"></div>
 <button class="primary" id="attendanceSave" type="submit">儲存差勤</button>
 </form>
 </section>
@@ -641,16 +647,29 @@ function renderAttendance(){
  attendanceOriginal=attendanceRecordsFor(date,attendanceSession.value,attendanceLog);
  const names=[...new Set([...attendanceNames,...attendanceOriginal.keys()])];
  const list=$('attendanceRows');list.replaceChildren();
- for(const name of names){
-  const row=list.insertRow();
-  row.insertCell().textContent=name;
-  row.insertCell().textContent=attendanceGrades.get(name)||'待確認';
-  const select=document.createElement('select');
+ for(const grade of ['高三','高二','高一','待確認']){
+  const members=names.filter(name=>(attendanceGrades.get(name)||'待確認')===grade);
+  if(!members.length&&grade==='待確認')continue;
+  const group=document.createElement('div');
+  group.className='attendance-group';
+  const heading=document.createElement('h3');
+  heading.textContent=grade+'（'+members.length+' 人）';
+  group.append(heading);
+  for(const name of members){
+   const row=document.createElement('div');
+   row.className='attendance-student';
+   const label=document.createElement('span');
+   label.textContent=name;
+   row.append(label);
+   const select=document.createElement('select');
   select.dataset.student=name;
   select.setAttribute('aria-label',name+' 差勤');
   for(const status of attendanceOptions)select.add(new Option(status||'未登錄',status));
   select.value=attendanceOriginal.get(name)||'';
-  row.insertCell().append(select);
+   row.append(select);
+   group.append(row);
+  }
+  list.append(group);
  }
  $('attendanceSave').disabled=attendanceBusy||!attendanceReady||date>currentAttendanceDate()||!names.length;
 }
@@ -672,7 +691,7 @@ async function runAttendance(action){
   attendanceBusy=false;
   dayControls.inert=false;
   for(const el of controls.querySelectorAll('input,select,button'))el.disabled=false;
-  $('attendanceSave').disabled=!attendanceReady||!attendanceDate.value||attendanceDate.value>currentAttendanceDate()||!$('attendanceRows').rows.length;
+  $('attendanceSave').disabled=!attendanceReady||!attendanceDate.value||attendanceDate.value>currentAttendanceDate()||!$('attendanceRows').querySelector('select');
  }
 }
 async function loadAttendance(){
