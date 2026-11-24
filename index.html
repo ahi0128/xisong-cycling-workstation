@@ -114,6 +114,15 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <p id="duesStatus" role="status"></p><div id="duesRows"></div>
 </section><section id="equipment" hidden>
 <h2>器材借用</h2>
+<details><summary>新增器材</summary>
+<form id="assetForm">
+<p>依類別自動編號。你可以在儲存前調整類別。</p>
+<label>品名<input name="title" maxlength="100" required></label>
+<label>類別<select name="category"></select></label>
+<label>數量<input name="quantity" type="number" min="1" step="1" value="1" required></label>
+<label>存放位置（選填）<input name="location" maxlength="100"></label>
+<button class="primary">儲存器材</button>
+</form></details>
 <form id="equipmentForm">
 <label>器材／編號<select id="equipmentItem" required><option value="">選擇器材</option></select></label>
 <label>借用人<input id="equipmentBorrower" required maxlength="60"></label>
@@ -122,15 +131,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <p id="equipmentStatus" role="status" hidden></p>
 <div class="equipment-heading"><h3>借用中</h3><button id="equipmentRefresh" type="button">重新整理</button></div>
 <div id="equipmentOpen"></div>
-<details><summary>新增器材</summary>
-<form id="assetForm">
-<label>器材編號<input name="code" maxlength="60" required></label>
-<label>品名<input name="title" maxlength="100" required></label>
-<label>類別<select name="category"></select></label>
-<label>數量<input name="quantity" type="number" min="1" step="1" value="1" required></label>
-<label>存放位置（選填）<input name="location" maxlength="100"></label>
-<button class="primary">儲存器材</button>
-</form></details>
+
 <details><summary>器材庫存</summary><label>類別<select id="equipmentCategory"></select></label><div id="equipmentStock"></div></details>
 <details><summary>已歸還紀錄</summary><div id="equipmentReturned"></div></details>
 </section><section id="races" hidden><h2 id="raceTitle"></h2><p id="teamRaceParentLink"><a href="https://ahi0128.github.io/xisong-cycling-parent/#team-calendar" target="_blank" rel="noopener noreferrer">查看家長頁的車隊參賽</a></p>
@@ -404,6 +405,7 @@ async function equipmentSnapshot(){
   const loaned=outstanding.get(code)||0;
   return {code,name,category,total,location,note,loaned,available:Math.max(0,Number(total)-loaned)};
  });
+ assets.sort(compareEquipmentAssets);
  return {records,assets};
 }
 function renderEquipmentStock(){
@@ -472,6 +474,29 @@ async function refreshEquipment(){
  }
 }
 $('equipmentCategory').onchange=renderEquipmentStock;
+const assetPrefixes=new Map([
+ ['輪組','WHL'],['車架','FRM'],['休息把套件','AER'],['手把','BAR'],['坐墊／座管','SAD'],
+ ['電子功率','ELC'],['齒盤傳動','DRV'],['踏板','PDL'],['安全裝備','SAF'],
+ ['工具維修','TLS'],['訓練設備','TRN'],['運輸收納','STO'],['其他','OTH']
+]);
+const assetCollator=new Intl.Collator('zh-Hant-TW',{numeric:true});
+function compareEquipmentAssets(a,b){
+ return assetCollator.compare(a.category||'其他',b.category||'其他')||
+  assetCollator.compare(a.name,b.name)||assetCollator.compare(a.code,b.code);
+}
+function nextEquipmentCode(category,assets){
+ const prefix=assetPrefixes.get(category);
+ if(!prefix)throw new Error('請選擇器材類別。');
+ let last=0;
+ for(const asset of assets){
+  const code=String(asset.code).normalize('NFKC').trim().toUpperCase();
+  if(asset.category!==category&&!code.startsWith(prefix+'-'))continue;
+  const suffix=Number(code.match(/-(\d+)$/)?.[1]);
+  if(Number.isSafeInteger(suffix))last=Math.max(last,suffix);
+ }
+ if(!Number.isSafeInteger(last+1))throw new Error('器材編號已達上限。');
+ return prefix+'-'+String(last+1).padStart(3,'0');
+}
 const assetClasses=[
  ['輪組',/輪組|碟輪|板輪|輪圈|前輪|後輪|花鼓|外胎|內胎/],
  ['車架',/車架|前叉|場地車|公路車|整車/],
@@ -481,7 +506,7 @@ const assetClasses=[
  ['電子功率',/功率|碼表|車錶|心率|感測器|garmin|wahoo/i],
  ['齒盤傳動',/齒盤|齒片|飛輪|大盤|曲柄|鏈條|變速/],
  ['踏板',/踏板|卡踏|扣片/],
- ['安全裝備',/安全帽|頭盔|護具|車燈|反光衣/],
+ ['安全裝備',/安全帽|計時帽|頭盔|護具|車燈|反光衣/],
  ['工具維修',/工具|扳手|打氣筒|維修架|補胎/],
  ['訓練設備',/訓練台|滾筒|測功台/],
  ['運輸收納',/車袋|車箱|輪袋|收納|攜車架/]
@@ -502,15 +527,15 @@ assetCategory.addEventListener('change',()=>{manualAssetCategory=true});
 assetForm.onsubmit=event=>{
  event.preventDefault();
  const fields=new FormData(assetForm);
- const code=fields.get('code').trim(),name=fields.get('title').trim();
+ const name=fields.get('title').trim(),category=fields.get('category');
+ let code;
  const quantity=Number(fields.get('quantity'));
  return runEquipment(async()=>{
   const {assets}=await equipmentSnapshot();
-  if(!code||!name||!Number.isSafeInteger(quantity)||quantity<1)throw new Error('請填寫器材編號、品名及正整數數量。');
-  const normalize=value=>String(value).normalize('NFKC').replace(/\s/g,'').toLowerCase();
-  if(assets.some(asset=>normalize(asset.code)===normalize(code)))throw new Error('此器材編號已存在。');
+  if(!name||!Number.isSafeInteger(quantity)||quantity<1)throw new Error('請填寫品名及正整數數量。');
+  code=nextEquipmentCode(category,assets);
   const range='/values/'+encodeURIComponent("'器材清單'!A1:F");
-  const values=[[code,name,fields.get('category'),quantity,fields.get('location').trim(),'']];
+  const values=[[code,name,category,quantity,fields.get('location').trim(),'']];
   const result=await sheetsRequest(range+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{
    method:'POST',body:JSON.stringify({values})
   });
@@ -518,7 +543,7 @@ assetForm.onsubmit=event=>{
   assetForm.reset();
   manualAssetCategory=false;
   try{await refreshEquipment()}catch{throw new Error('器材已新增，清單載入失敗，請按重新整理。')}
- },'已新增器材並更新庫存。');
+ },()=> '已新增器材 '+code+'，並依類別排序。');
 };
 
 async function runEquipment(action,message){
@@ -531,7 +556,7 @@ async function runEquipment(action,message){
  try{
   await authorizeSheets();
   await action();
-  if(message)feedback(message,status,'success');
+  if(message)feedback(typeof message==='function'?message():message,status,'success');
   else $(status).hidden=true;
  }catch(error){feedback(error.message,status,'error')}
  finally{
