@@ -119,8 +119,8 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <label>時段<select id="attendanceSession"><option>晨操</option><option>下午訓練</option><option>週六團練</option><option>其他</option></select></label>
 <button id="attendanceToday" type="button">回到本週</button>
 <button id="attendanceAll" type="button">未登錄者標為到課</button>
-<p id="attendanceStatus" role="status" hidden></p>
-<div class="tablewrap"><table><thead><tr><th scope="col">姓名</th><th scope="col">本時段差勤</th></tr></thead><tbody id="attendanceRows"></tbody></table></div>
+<p id="attendanceStatus" role="status" hidden></p><p>年段依隊費固定名單顯示。舊紀錄若找不到對應名單，會標為「待確認」。</p>
+<div class="tablewrap"><table><thead><tr><th scope="col">姓名</th><th scope="col">年段</th><th scope="col">本時段差勤</th></tr></thead><tbody id="attendanceRows"></tbody></table></div>
 <button class="primary" id="attendanceSave" type="submit">儲存差勤</button>
 </form>
 </section>
@@ -600,7 +600,7 @@ const attendanceOptions=['','到課','缺課','遲到','早退','遲到及早退
 const attendanceColumns=['日期','時段','姓名','差勤','登錄時間'];
 const attendanceDate=$('attendanceDate'),attendanceSession=$('attendanceSession');
 const attendanceRange='/values/'+encodeURIComponent("'學生差勤'!A1:E");
-let attendanceBusy=false,attendanceReady=false,attendanceNames=[],attendanceLog=[],attendanceOriginal=new Map();
+let attendanceBusy=false,attendanceReady=false,attendanceNames=[],attendanceGrades=new Map(),attendanceLog=[],attendanceOriginal=new Map();
 function currentAttendanceDate(){
  return new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
 }
@@ -644,6 +644,7 @@ function renderAttendance(){
  for(const name of names){
   const row=list.insertRow();
   row.insertCell().textContent=name;
+  row.insertCell().textContent=attendanceGrades.get(name)||'待確認';
   const select=document.createElement('select');
   select.dataset.student=name;
   select.setAttribute('aria-label',name+' 差勤');
@@ -678,11 +679,19 @@ async function loadAttendance(){
  if(!attendanceDate.value)selectAttendanceToday();
  return runAttendance(async()=>{
   const [roster,log]=await Promise.all([
-   sheetsRequest('/values/'+encodeURIComponent("'隊費固定名單'!A:A")),
+   sheetsRequest('/values/'+encodeURIComponent("'隊費固定名單'!A:B")),
    sheetsRequest(attendanceRange)
   ]);
-  if(roster.values?.[0]?.[0]?.trim()!=='姓名'||attendanceColumns.some((col,i)=>log.values?.[0]?.[i]!==col))throw new Error('雲端差勤或隊費名單欄位不符。');
-  attendanceNames=[...new Set(roster.values.slice(1).map(row=>String(row[0]||'').trim()).filter(Boolean))];
+  if(roster.values?.[0]?.[0]?.trim()!=='姓名'||roster.values?.[0]?.[1]?.trim()!=='年級'||attendanceColumns.some((col,i)=>log.values?.[0]?.[i]!==col))throw new Error('雲端差勤或隊費名單欄位不符。');
+  const gradeOrder=['高一','高二','高三'];
+  attendanceGrades=new Map(roster.values.slice(1).flatMap(([name,grade])=>{
+   const key=String(name??'').trim();
+   const year=String(grade??'').trim();
+   return key?[[key,gradeOrder.includes(year)?year:'待確認']]:[];
+  }));
+  attendanceNames=[...attendanceGrades.keys()].sort((a,b)=>
+   [...gradeOrder,'待確認'].indexOf(attendanceGrades.get(a))-
+   [...gradeOrder,'待確認'].indexOf(attendanceGrades.get(b)));
   attendanceLog=log.values.slice(1);
   attendanceReady=true;
   renderAttendance();
