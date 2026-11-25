@@ -32,7 +32,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <div class="header-actions"><button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer">開啟正式雲端帳本</a></div>
 <p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
 </header>
-<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="attendance" aria-pressed="false">差勤</button> <button data-view="equipment" aria-pressed="false">器材借用</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
+<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="contacts" aria-pressed="false">通訊錄</button> <button data-view="attendance" aria-pressed="false">差勤</button> <button data-view="equipment" aria-pressed="false">器材借用</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
 <div id="ledger" hidden>
 <section>
 <h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
@@ -118,6 +118,17 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 </details>
 <p>每人每月 2,500 元。收款請從此頁登記。確認實收會同步雲端繳納清單，並以今天為收款日入帳。既有本機勾選須先核對是否已入帳。本月名單調整仍保存在目前瀏覽器。</p>
 <p id="duesStatus" role="status"></p><div id="duesRows"></div>
+</section><section id="contacts" hidden>
+<h2>車隊通訊錄</h2>
+<p id="contactsStatus" role="status" hidden></p>
+<label>隊員<select id="contactStudent" disabled><option value="">選擇隊員</option></select></label>
+<form id="contactEditor" hidden>
+<label>學生電話<input name="studentPhone" type="tel" maxlength="40"></label>
+<label>家長／聯絡人<input name="guardian" maxlength="80"></label>
+<label>家長電話<input name="guardianPhone" type="tel" maxlength="40"></label>
+<label>備註<textarea name="note" maxlength="400"></textarea></label>
+<button class="primary">儲存聯絡資料</button>
+</form>
 </section><section id="attendance" hidden>
 <h2>學生差勤</h2><p id="attendanceWeek"></p><div id="attendanceDays" class="ledger-actions" aria-label="本週日期"></div>
 <form id="attendanceForm">
@@ -737,6 +748,61 @@ $('attendanceForm').onsubmit=event=>{
  });
 };
 
+const contactHeaders=["姓名","年級","學生電話","家長／聯絡人","家長電話","備註"];
+const contactDataRange=range=>'/values/'+encodeURIComponent("'車隊通訊錄'!"+range);
+const contactForm=$('contactEditor'),contactPicker=$('contactStudent');
+const contactFields=['studentPhone','guardian','guardianPhone','note'];
+let contactRows=[],contactBusy=false;
+async function readContacts(){
+ const {values=[]}=await sheetsRequest(contactDataRange('A1:F'));
+ if(contactHeaders.some((name,i)=>values[0]?.[i]!==name))throw new Error('雲端通訊錄欄位不符。');
+ return values.slice(1).map((cells,i)=>({cells,row:i+2})).filter(record=>record.cells[0]);
+}
+function editContact(){
+ const record=contactRows.find(row=>row.cells[0]===contactPicker.value);
+ contactForm.hidden=!record;
+ if(record)contactFields.forEach((field,i)=>{contactForm.elements.namedItem(field).value=record.cells[i+2]??''});
+}
+async function runContactAction(action){
+ if(contactBusy)return;
+ contactBusy=true;
+ const controls=[...$('contacts').querySelectorAll('input,select,textarea,button')];
+ for(const control of controls)control.disabled=true;
+ try{await authorizeSheets();await action()}
+ catch(error){feedback(error.message,'contactsStatus','error')}
+ finally{contactBusy=false;for(const control of controls)control.disabled=false;contactPicker.disabled=!contactRows.length}
+}
+async function loadContacts(){
+ return runContactAction(async()=>{
+  contactRows=await readContacts();
+  const selected=contactPicker.value;
+  const gradeOrder=['高三','高二','高一'];
+  contactPicker.replaceChildren(new Option('選擇隊員',''),...contactRows.toSorted((a,b)=>gradeOrder.indexOf(a.cells[1])-gradeOrder.indexOf(b.cells[1])).map(({cells:[name,grade]})=>new Option(grade+' ｜ '+name,name)));
+  contactPicker.value=contactRows.some(r=>r.cells[0]===selected)?selected:'';
+  editContact();
+  feedback('已載入 '+contactRows.length+' 位隊員。','contactsStatus','success');
+ });
+}
+contactPicker.onchange=editContact;
+contactForm.onsubmit=event=>{
+ event.preventDefault();
+ const selected=contactPicker.value;
+ const original=contactRows.find(record=>record.cells[0]===selected);
+ const values=contactFields.map(field=>contactForm.elements.namedItem(field).value.trim());
+ if(!original)return;
+ return runContactAction(async()=>{
+  const latest=await readContacts();
+  const matches=latest.filter(record=>record.cells[0]===selected);
+  if(matches.length!==1)throw new Error('無法確認這位隊員的通訊錄列。');
+  const current=matches[0];
+  if(values.some((_,i)=>String(current.cells[i+2]??'')!==String(original.cells[i+2]??'')))throw new Error('資料已由其他人更新，請重新開啟通訊錄再核對。');
+  const result=await sheetsRequest(contactDataRange('C'+current.row+':F'+current.row)+'?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[values]})});
+  if(result.updatedRows!==1)throw new Error('未能確認聯絡資料已儲存。');
+  current.cells=[...current.cells.slice(0,2),...values];
+  contactRows=latest;
+  feedback('已儲存 '+selected+' 的聯絡資料。','contactsStatus','success');
+ });
+};
 async function switchView(view){
  activeView=view;
  const current=++raceRequest;
@@ -747,7 +813,9 @@ async function switchView(view){
  $('dues').hidden=view!=='dues';
  $('equipment').hidden=view!=='equipment';
  $('attendance').hidden=view!=='attendance';
+ $('contacts').hidden=view!=='contacts';
  $('races').hidden=!Object.hasOwn(raceViews,view);
+ if(view==='contacts'){await loadContacts();return}
  if(view==='attendance'){await loadAttendance();return}
  if(view==='equipment'){await runEquipment(refreshEquipment);return}
  if(view==='dues'){
