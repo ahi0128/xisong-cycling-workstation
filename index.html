@@ -26,13 +26,19 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 .attendance-student{display:flex;align-items:center;justify-content:space-between;gap:.35rem;padding:.45rem .55rem;border-top:1px solid #e2e9f2}
 .attendance-student select{max-width:61%;min-width:0}
 @media(max-width:760px){.attendance-grid{grid-template-columns:1fr}.attendance-student select{max-width:70%}}
+#briefDialog{width:min(900px,calc(100% - 2rem));max-height:85vh;border:1px solid #9aacc6;border-radius:12px;padding:1rem;color:#182c49}
+#briefDialog::backdrop{background:#12234299}.brief-head{display:flex;justify-content:space-between;align-items:center;gap:.5rem}
+#briefGroups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,235px),1fr));gap:.6rem;margin:1rem 0}
+.brief-group{border:1px solid #cad7ea;border-radius:8px;padding:.6rem;min-width:0}
+.brief-group h3{margin:.2rem 0}.brief-note{border-top:1px solid #dce4ef;padding:.5rem 0;white-space:pre-wrap;overflow-wrap:anywhere}
+#briefForm textarea{font:inherit;width:min(32rem,100%)}#briefForm .brief-text{display:grid;width:100%}
 </style>
 <main>
 <header><p class="site-label">管理工作站</p><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
 <div class="header-actions"><button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer">開啟正式雲端帳本</a></div>
 <p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
 </header>
-<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="contacts" aria-pressed="false">通訊錄</button> <button data-view="attendance" aria-pressed="false">差勤</button> <button data-view="equipment" aria-pressed="false">器材借用</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a></nav>
+<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="contacts" aria-pressed="false">通訊錄</button> <button data-view="attendance" aria-pressed="false">差勤</button> <button data-view="equipment" aria-pressed="false">器材借用</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a> <button id="openBrief" type="button">今日交接</button></nav>
 <div id="ledger" hidden>
 <section>
 <h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
@@ -165,7 +171,23 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <details><summary>已歸還紀錄</summary><div id="equipmentReturned"></div></details>
 </section><section id="races" hidden><h2 id="raceTitle"></h2><p id="teamRaceParentLink"><a href="https://ahi0128.github.io/xisong-cycling-parent/#team-calendar" target="_blank" rel="noopener noreferrer">查看家長頁的車隊參賽</a></p>
 <details id="racePublishSettings"><summary>賽程發布設定</summary><label>GitHub 發布權杖（與家長月報共用） <input id="raceToken" type="password" autocomplete="off" spellcheck="false"></label></details>
-<p id="raceStatus" role="status" hidden></p><div id="raceList"></div></section></main>
+<p id="raceStatus" role="status" hidden></p><div id="raceList"></div></section>
+<dialog id="briefDialog" aria-labelledby="briefTitle">
+<div class="brief-head"><h2 id="briefTitle">今日交接</h2><button id="briefClose" type="button">關閉</button></div>
+<p id="briefDate"></p>
+<p>通知對象會標在留言上。請假填姓名與時段即可。</p><button id="briefRefresh" type="button">重新整理留言</button>
+<div id="briefGroups"></div>
+<form id="briefForm">
+<label>交接欄<select name="role" id="briefRole"></select></label>
+<label>類型<select name="kind"><option>待辦事項</option><option>請假登記</option><option>訓練提醒</option><option>其他交接</option></select></label>
+<label>通知對象<select name="audience" id="briefAudience"></select></label>
+<label>留言人<input name="author" maxlength="40" required></label>
+<label class="brief-text">事項<textarea name="body" rows="3" maxlength="500" required></textarea></label>
+<button type="submit" class="primary">張貼留言</button>
+</form>
+<p id="briefStatus" role="status" hidden></p>
+</dialog>
+</main>
 <script>
 'use strict';
 const $ = id => document.getElementById(id);
@@ -1343,6 +1365,73 @@ async function sheetsRequest(path,options={}){
    response.status===401?'Google 授權已失效，請再按一次儲存。':'雲端帳簿請求失敗（'+response.status+'），請重試。');
   return response.json();
  }
+const briefRoles=['教練','隊長','副隊長','文書','總務','經理'];
+const briefHeaders=["日期","職務欄","類型","通知對象","留言人","事項","登錄時間"];
+const briefRange='/values/'+encodeURIComponent("'今日交接'!A1:G");
+const briefDialog=$('briefDialog'),briefForm=$('briefForm');
+let briefOpenedOnLogin=false,briefBusy=false,briefDate='';
+$('briefRole').replaceChildren(...briefRoles.map(role=>new Option(role,role)));
+$('briefAudience').replaceChildren(...['全體',...briefRoles].map(role=>new Option(role,role)));
+$('briefClose').onclick=()=>briefDialog.close();
+$('openBrief').onclick=openBrief;
+$('briefRefresh').onclick=openBrief;
+async function readBrief(){
+ const {values=[]}=await sheetsRequest(briefRange);
+ if(!briefHeaders.every((key,i)=>values[0]?.[i]===key))throw new Error('找不到今日交接欄位。');
+ return values.slice(1).filter(row=>row[0]===briefDate);
+}
+function renderBrief(rows){
+ const groups=$('briefGroups');groups.replaceChildren();
+ for(const role of briefRoles){
+  const group=document.createElement('section');
+  group.className='brief-group';
+  const heading=document.createElement('h3');heading.textContent=role;group.append(heading);
+  const notes=rows.filter(row=>row[1]===role);
+  if(!notes.length){const empty=document.createElement('p');empty.textContent='尚無留言';group.append(empty)}
+  for(const row of notes.reverse()){
+   const note=document.createElement('div');note.className='brief-note';
+   const meta=document.createElement('strong');meta.textContent=row[2]+' ｜ 通知 '+row[3];
+   const body=document.createElement('div');body.textContent=row[5];
+   const author=document.createElement('small');author.textContent='留言人 '+row[4];
+   note.append(meta,body,author);group.append(note);
+  }
+  groups.append(group);
+ }
+}
+async function runBrief(action){
+ if(briefBusy)return;
+ briefBusy=true;
+ const submit=briefForm.querySelector('button[type="submit"]');submit.disabled=true;
+ try{await authorizeSheets();await action()}
+ catch(error){feedback(error.message,'briefStatus','error')}
+ finally{briefBusy=false;submit.disabled=false}
+}
+function openBrief(){
+ if(briefBusy)return;
+ briefDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
+ $('briefDate').textContent=briefDate;
+ $('briefGroups').textContent='正在載入交接留言…';
+ $('briefStatus').hidden=true;
+ if(!briefDialog.open)briefDialog.showModal();
+ return runBrief(async()=>renderBrief(await readBrief()));
+}
+briefForm.onsubmit=event=>{
+ event.preventDefault();
+ const fields=new FormData(briefForm);
+ const author=fields.get('author').trim(),body=fields.get('body').trim();
+ if(!author||!body){feedback('請填寫留言人和事項。','briefStatus','error');return}
+ const date=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
+ if(date!==briefDate){void openBrief();return}
+ return runBrief(async()=>{
+  const values=[[briefDate,fields.get('role'),fields.get('kind'),fields.get('audience'),author,body,new Date().toISOString()]];
+  const result=await sheetsRequest(briefRange+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{method:'POST',body:JSON.stringify({values})});
+  if(result.updates?.updatedRows!==1)throw new Error('無法確認留言已儲存，請重新開啟今日交接核對。');
+  briefForm.elements.namedItem('body').value='';
+  try{renderBrief(await readBrief())}catch{throw new Error('已張貼留言，請重新開啟今日交接查看。')}
+  feedback('留言已張貼。','briefStatus','success');
+ });
+};
+
 async function loadCloudLedger({signIn=false}={}){
  await authorizeSheets(signIn,false);
  const ranges=["'收支明細'!A1:G","'月結'!B2"].map(range=>'ranges='+encodeURIComponent(range)).join('&');
@@ -1357,6 +1446,7 @@ async function loadCloudLedger({signIn=false}={}){
  $('ledger').hidden=activeView!=='ledger';
  feedback('目前顯示正式雲端帳簿。','ledgerSource','success');
  render();
+ if(!briefOpenedOnLogin){briefOpenedOnLogin=true;void openBrief()}
  return cloudLedger;
 }
 async function deleteCloudEntry(row,control){
