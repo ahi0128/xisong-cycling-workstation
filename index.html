@@ -32,12 +32,29 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 .brief-group{border:1px solid #cad7ea;border-radius:8px;padding:.6rem;min-width:0}
 .brief-group h3{margin:.2rem 0}.brief-note{border-top:1px solid #dce4ef;padding:.5rem 0;white-space:pre-wrap;overflow-wrap:anywhere}
 #briefForm textarea{font:inherit;width:min(32rem,100%)}#briefForm .brief-text{display:grid;width:100%}
+#financePermitLabel[hidden]{display:none}
 </style>
 <main>
 <header><p class="site-label">管理工作站</p><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
-<div class="header-actions"><button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer">開啟正式雲端帳本</a></div>
+<div class="header-actions"><button type="button" id="openFinanceReview">帳務送審／審核</button><button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer">開啟正式雲端帳本</a></div>
 <p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
 </header>
+<section id="financeReview" hidden aria-labelledby="financeRole">
+<h2 id="financeRole">帳務送審</h2>
+<p>用款先申請，核准後再登載實際支出。收入和支出經教練確認後入帳。</p>
+<form id="financeForm">
+<label>類型<select id="financeKind"><option value="use">用款申請</option><option value="income">收入</option><option value="expense">支出</option></select></label>
+<label>日期<input id="financeDate" type="date" required></label>
+<label>用途<input id="financeTitle" required maxlength="180"></label>
+<label>金額（元）<input id="financeAmount" type="number" min="0.01" max="1000000" step="0.01" required></label>
+<label id="financePermitLabel" hidden>用款許可<select id="financePermit"></select></label>
+<label>備註（入帳後會公開）<input id="financeNote" maxlength="300"></label>
+<button type="submit" class="primary">送交審核</button>
+</form>
+<p><button type="button" id="financeSync" hidden>同步審核結果</button> <button type="button" id="financeClose">關閉</button></p>
+<p id="financeReviewStatus" role="status"></p>
+<div id="financeItems"></div>
+</section>
 <nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="contacts" aria-pressed="false">通訊錄</button> <button data-view="attendance" aria-pressed="false">差勤</button> <button data-view="equipment" aria-pressed="false">器材借用</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a> <button id="openBrief" type="button">今日交接</button></nav>
 <div id="ledger" hidden>
 <section>
@@ -1704,4 +1721,5 @@ async function init(){
 }
 init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。','status','error'));
 </script>
+<script src="finance-review.js"></script>
 </html>
