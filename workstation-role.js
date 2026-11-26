@@ -53,7 +53,7 @@
   if (!params.has('code') && !params.has('error')) return;
   const saved = sessionStorage.getItem(storageKey);
   sessionStorage.removeItem(storageKey);
-  for (const key of ['code','state','error','error_description','scope','authuser','prompt']) params.delete(key);
+  for (const key of ['code','state','error','error_description','scope','authuser','prompt','iss']) params.delete(key);
   const search = params.toString();
   history.replaceState(null,'',redirect+(search?'?'+search:'')+location.hash);
   const previous = JSON.parse(saved || 'null');
@@ -67,7 +67,11 @@
   session=result.session;
   control.hidden=true;
   const views = ['attendance','equipment'].filter(view=>profile.actions.includes(view+'.read'));
-  for(const button of document.querySelectorAll('#workstationNav [data-view]')) button.hidden=!views.includes(button.dataset.view);
+  const isCoach = profile.level === 3;
+  for(const button of document.querySelectorAll('#workstationNav [data-view]')) {
+   button.hidden=!isCoach && !views.includes(button.dataset.view);
+  }
+  if(isCoach) $('loadCloud').textContent='連線正式帳簿';
   $('openBrief').hidden=!profile.actions.includes('brief.read');
   $('workstationNav').hidden=false;
   feedback('第 '+profile.level+' 層｜已登入工作站。','ledgerSource','success');
