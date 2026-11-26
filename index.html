@@ -33,6 +33,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 .brief-group h3{margin:.2rem 0}.brief-note{border-top:1px solid #dce4ef;padding:.5rem 0;white-space:pre-wrap;overflow-wrap:anywhere}
 #briefForm textarea{font:inherit;width:min(32rem,100%)}#briefForm .brief-text{display:grid;width:100%}
 #financePermitLabel[hidden],#assetForm[hidden],#equipmentForm[hidden]{display:none}
+.equipment-stock-group{margin:.75rem 0 1.15rem}.equipment-stock-group h3{margin:0;padding:.5rem .65rem;background:#edf3fc;border-radius:6px}.equipment-stock-group .equipment-row{padding-inline:.5rem}
 </style>
 <main>
 <header><p class="site-label">管理工作站</p><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
@@ -185,7 +186,10 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <div class="equipment-heading"><h3>借用中</h3><button id="equipmentRefresh" type="button">重新整理</button></div>
 <div id="equipmentOpen"></div>
 
-<details><summary>器材庫存</summary><label>類別<select id="equipmentCategory"></select></label><div id="equipmentStock"></div></details>
+<details open><summary>器材庫存</summary>
+<div class="ledger-actions"><label>類別<select id="equipmentCategory"></select></label>
+<label>搜尋器材<input id="equipmentSearch" type="search" placeholder="品名、編號或存放位置"></label></div>
+<div id="equipmentStock"></div></details>
 <details><summary>已歸還紀錄</summary><div id="equipmentReturned"></div></details>
 <dialog id="equipmentEditDialog" aria-labelledby="equipmentEditTitle">
 <h3 id="equipmentEditTitle">編輯器材</h3>
@@ -539,7 +543,10 @@ equipmentEditForm.onsubmit=async event=>{
   const result=await window.workstationRole.request(action,{...formData,...identity});
   if(result.saved!==1)throw new Error('無法確認修改結果。');
   equipmentEditDialog.close();
-  try{await refreshEquipment();feedback('已儲存修改。','equipmentStatus','success')}
+  try{
+   const selectedCategory=$('equipmentCategory').value;
+   await refreshEquipment(edit.action==='equipment.editAsset'&&selectedCategory?formData.category:undefined);
+   feedback('已儲存修改。','equipmentStatus','success')}
   catch{feedback('修改已儲存，請重新整理器材清單。','equipmentStatus','error')}
  }catch(error){feedback(error.message,'equipmentEditStatus','error')}
  finally{
@@ -549,18 +556,43 @@ equipmentEditForm.onsubmit=async event=>{
 };
 function renderEquipmentStock(){
  const category=$('equipmentCategory').value;
+ const query=$('equipmentSearch').value.trim().normalize('NFKC').toLowerCase();
  const list=$('equipmentStock');
  list.replaceChildren();
- for(const a of equipmentAssets.filter(a=>!category||a.category===category)){
-  const line=document.createElement('div');line.className='row';
-  line.textContent=a.code+' ｜ '+a.name+' ｜ 可用 '+a.available+'/'+a.total+
-   (a.loaned>Number(a.total)?' ｜ 借出超出庫存，請核對':'')+
-   (a.location?' ｜ '+a.location:'')+(a.note?' ｜ '+a.note:'');
-  if(window.workstationRole?.can('equipment.editAsset'))line.append(button('編輯',()=>openEquipmentEdit('equipment.editAsset',a)));
-  list.append(line);
+ const groups=new Map();
+ for(const asset of equipmentAssets){
+  const group=asset.category||'其他';
+  if(category&&category!==group)continue;
+  const search=[asset.code,asset.name,asset.location].filter(Boolean).join(' ').normalize('NFKC').toLowerCase();
+  if(query&&!search.includes(query))continue;
+  if(!groups.has(group))groups.set(group,[]);
+  groups.get(group).push(asset);
  }
+ for(const [categoryName,assets] of groups){
+  const group=document.createElement('div');
+  group.className='equipment-stock-group';
+  const heading=document.createElement('h3');
+  heading.textContent=categoryName+'（'+assets.length+' 項）';
+  group.append(heading);
+  for(const asset of assets){
+   const line=document.createElement('div');line.className='row equipment-row';
+   const info=document.createElement('div');
+   info.textContent=asset.code+' ｜ '+asset.name+' ｜ 可用 '+asset.available+'/'+asset.total+
+    (asset.loaned>Number(asset.total)?' ｜ 借出超出庫存，請核對':'')+
+    (asset.location?' ｜ '+asset.location:'')+(asset.note?' ｜ '+asset.note:'');
+   line.append(info);
+   if(window.workstationRole?.can('equipment.editAsset')){
+    const editButton=button('編輯器材資料',()=>openEquipmentEdit('equipment.editAsset',asset));
+    editButton.setAttribute('aria-label','編輯器材資料：'+asset.name+' '+asset.code);
+    line.append(editButton);
+   }
+   group.append(line);
+  }
+  list.append(group);
+ }
+ if(!groups.size)list.textContent='沒有符合條件的器材。';
 }
-async function refreshEquipment(){
+async function refreshEquipment(preferredCategory){
  const canWrite=Boolean(window.workstationRole?.active());
  $('assetForm').hidden=!canWrite;
  $('equipmentForm').hidden=!canWrite;
@@ -573,8 +605,8 @@ async function refreshEquipment(){
   option.disabled=!a.available;return option;
  }));
  if(assets.some(a=>a.code===previous&&a.available))selector.value=previous;
- const category=$('equipmentCategory'),previousCategory=category.value;
- const categories=[...new Set(assets.map(a=>a.category).filter(Boolean))];
+ const category=$('equipmentCategory'),previousCategory=preferredCategory??category.value;
+ const categories=[...new Set(assets.map(a=>a.category||'其他'))];
  category.replaceChildren(new Option('全部',''),...categories.map(name=>new Option(name,name)));
  if(categories.includes(previousCategory))category.value=previousCategory;
  renderEquipmentStock();
@@ -621,6 +653,7 @@ async function refreshEquipment(){
  }
 }
 $('equipmentCategory').onchange=renderEquipmentStock;
+$('equipmentSearch').oninput=renderEquipmentStock;
 const assetPrefixes=new Map([
  ['輪組','WHL'],['車架','FRM'],['休息把套件','AER'],['手把','BAR'],['坐墊／座管','SAD'],
  ['電子功率','ELC'],['齒盤傳動','DRV'],['踏板','PDL'],['安全裝備','SAF'],
