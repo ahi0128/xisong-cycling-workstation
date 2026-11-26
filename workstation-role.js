@@ -1,7 +1,7 @@
 // Set window.workstationRoleConfig to {clientId, endpoint} before loading this script.
 (() => {
  const config = {clientId:"724575578653-0h3khvta20slmhrcp3dj5mn8g973k543.apps.googleusercontent.com",endpoint:"https://script.google.com/macros/s/AKfycbyo3sYe-g2pTz5I7TBYchMLA0dsAxuM2bKeaOIAkhQ30AOLEjHQFkcFavihKR9RF6cBug/exec"};
- if (!config?.clientId || !config?.endpoint) return;
+ if (!config?.clientId || !config?.endpoint) { $('loadCloud').hidden=false; return; }
  const endpoint = new URL(config.endpoint);
  if (endpoint.origin !== 'https://script.google.com' || !endpoint.pathname.endsWith('/exec')) return;
  const redirect = location.origin + location.pathname;
@@ -21,7 +21,7 @@
   if (result.error) {
    if (result.error==='sign_in_required') {
     session=undefined;
-    for(const id of ['attendance','equipment','workstationNav']) $(id).hidden=true;
+    for(const id of ['attendance','equipment','workstationNav','openFinanceReview','loadCloud']) $(id).hidden=true;
     if($('briefDialog').open) $('briefDialog').close();
     $('roleLogin').hidden=false;
    }
@@ -63,14 +63,16 @@
   if (!callback.get('code')) throw new Error('Google 登入未完成。');
   const result = await request('login',{code:callback.get('code'),verifier:previous.verifier});
   const profile = result.profile;
-  if (!profile?.actions.length) throw new Error('此帳號的工作站功能尚未開通。');
+  if (!profile || (!profile.actions.length && profile.role!=='treasurer')) throw new Error('此帳號的工作站功能尚未開通。');
   session=result.session;
   control.hidden=true;
   const views = ['attendance','equipment'].filter(view=>profile.actions.includes(view+'.read'));
   const isCoach = profile.level === 3;
+  $('openFinanceReview').hidden=!(isCoach||profile.role==='treasurer');
   for(const button of document.querySelectorAll('#workstationNav [data-view]')) {
    button.hidden=!isCoach && !views.includes(button.dataset.view);
   }
+  $('loadCloud').hidden=!isCoach;
   if(isCoach) $('loadCloud').textContent='連線正式帳簿';
   $('openBrief').hidden=!profile.actions.includes('brief.read');
   $('workstationNav').hidden=false;
