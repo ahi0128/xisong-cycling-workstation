@@ -210,6 +210,16 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <dialog id="briefDialog" aria-labelledby="briefTitle">
 <div class="brief-head"><h2 id="briefTitle">今日交接</h2><button id="briefClose" type="button">關閉</button></div>
 <p id="briefDate"></p>
+<section aria-label="今日值勤" style="padding:.75rem 1rem;margin-bottom:1rem;background:#edf4ff;border:1px solid #b6c9e9;border-radius:.65rem">
+ <div role="status"><strong>本週值星</strong> <span id="briefWeeklyDuty">載入中…</span>　<strong>今日值日</strong> <span id="briefDailyDuty">載入中…</span></div>
+ <details id="briefDutyEdit" hidden><summary>登記今日值勤</summary>
+  <form id="briefDutyForm">
+   <label>本週值星<input name="weekly" maxlength="40"></label>
+   <label>今日值日<input name="daily" maxlength="80" placeholder="兩人可用頓號分開"></label>
+   <button type="submit">儲存今日值勤</button>
+  </form>
+ </details>
+</section>
 <p>通知對象會標在留言上。請假填姓名與時段即可。</p><button id="briefRefresh" type="button">重新整理留言</button>
 <div id="briefGroups"></div>
 <form id="briefForm">
@@ -1657,7 +1667,25 @@ async function readBrief(){
  if(!briefHeaders.every((key,i)=>values[0]?.[i]===key))throw new Error('找不到今日交接欄位。');
  return values.slice(1).filter(row=>row[0]===briefDate);
 }
+const briefDutyPrefix='[今日值勤]';
+function parseBriefDuty(row){
+ if(row[1]!=='教練'||row[2]!=='其他交接'||row[3]!=='全體'||!row[5]?.startsWith(briefDutyPrefix))return null;
+ try{
+  const entry=JSON.parse(row[5].slice(briefDutyPrefix.length));
+  return typeof entry?.weekly==='string'&&typeof entry.daily==='string'?entry:null;
+ }catch{return null}
+}
+function showBriefDuty(entry, fallback='尚未登記'){
+ $('briefWeeklyDuty').textContent=entry?.weekly||fallback;
+ $('briefDailyDuty').textContent=entry?.daily||fallback;
+}
 function renderBrief(rows){
+ const entry=rows.slice().reverse().map(parseBriefDuty).find(Boolean);
+ showBriefDuty(entry);
+ const form=$('briefDutyForm');
+ form.elements.weekly.value=entry?.weekly||'';
+ form.elements.daily.value=entry?.daily||'';
+ rows=rows.filter(row=>!parseBriefDuty(row));
  const groups=$('briefGroups');groups.replaceChildren();
  for(const role of briefRoles){
   const group=document.createElement('section');
@@ -1687,11 +1715,37 @@ function openBrief(){
  if(briefBusy)return;
  briefDate=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
  $('briefDate').textContent=briefDate;
+ showBriefDuty(null,'載入中…');
+ const role=window.workstationRole;
+ $('briefDutyEdit').hidden=!(role?.active()?role.isCoach()&&role.can('brief.write'):Boolean(sheetsToken));
  $('briefGroups').textContent='正在載入交接留言…';
  $('briefStatus').hidden=true;
  if(!briefDialog.open)briefDialog.showModal();
- return runBrief(async()=>renderBrief(await readBrief()));
+ return runBrief(async()=>{try{renderBrief(await readBrief())}catch(error){showBriefDuty(null,'無法載入');throw error}});
 }
+async function saveBriefNote(role,kind,audience,author,body){
+ const values=[[briefDate,role,kind,audience,author,body,new Date().toISOString()]];
+ const result=window.workstationRole?.active()
+  ? {updates:{updatedRows:(await window.workstationRole.request('brief.write',{kind,audience,body})).saved}}
+  : await sheetsRequest(briefRange+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{method:'POST',body:JSON.stringify({values})});
+ if(result.updates?.updatedRows!==1)throw new Error('無法確認儲存，請重新開啟今日交接核對。');
+}
+$('briefDutyForm').onsubmit=event=>{
+ event.preventDefault();
+ if($('briefDutyEdit').hidden||briefBusy)return;
+ const form=event.currentTarget;
+ const weekly=form.elements.weekly.value.trim(),daily=form.elements.daily.value.trim();
+ if(!weekly&&!daily){feedback('請填寫值星或值日人員。','briefStatus','error');return}
+ const date=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
+ if(date!==briefDate){void openBrief();return}
+ return runBrief(async()=>{
+  const author=briefForm.elements.namedItem('author').value.trim()||'教練';
+  await saveBriefNote('教練','其他交接','全體',author,briefDutyPrefix+JSON.stringify({weekly,daily}));
+  try{renderBrief(await readBrief())}catch{throw new Error('值勤已儲存，請重新開啟今日交接查看。')}
+  $('briefDutyEdit').open=false;
+  feedback('已儲存今日值勤。','briefStatus','success');
+ });
+};
 briefForm.onsubmit=event=>{
  event.preventDefault();
  const fields=new FormData(briefForm);
@@ -1700,11 +1754,7 @@ briefForm.onsubmit=event=>{
  const date=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
  if(date!==briefDate){void openBrief();return}
  return runBrief(async()=>{
-  const values=[[briefDate,fields.get('role'),fields.get('kind'),fields.get('audience'),author,body,new Date().toISOString()]];
-  const result=window.workstationRole?.active()
-   ? {updates:{updatedRows:(await window.workstationRole.request('brief.write',{kind:fields.get('kind'),audience:fields.get('audience'),body})).saved}}
-   : await sheetsRequest(briefRange+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{method:'POST',body:JSON.stringify({values})});
-  if(result.updates?.updatedRows!==1)throw new Error('無法確認留言已儲存，請重新開啟今日交接核對。');
+  await saveBriefNote(fields.get('role'),fields.get('kind'),fields.get('audience'),author,body);
   briefForm.elements.namedItem('body').value='';
   try{renderBrief(await readBrief())}catch{throw new Error('已張貼留言，請重新開啟今日交接查看。')}
   feedback('留言已張貼。','briefStatus','success');
