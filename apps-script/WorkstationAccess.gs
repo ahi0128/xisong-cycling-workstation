@@ -2,7 +2,7 @@
 // WORKSTATION_BOOK_ID, WORKSTATION_ROLES (JSON object mapping Google email to role).
 // Configure privately in Apps Script. Never put these values in the Pages frontend.
 const BRIEF_ACTIONS = ['brief.read','brief.write'];
-const EQUIPMENT_ACTIONS = ['equipment.read','equipment.register','equipment.borrow','equipment.return'];
+const EQUIPMENT_ACTIONS = ['equipment.read','equipment.register','equipment.borrow','equipment.return','equipment.editAsset','equipment.editLoan'];
 const WORKSTATION_ACCESS = Object.freeze({
   coach: ['attendance.read', 'attendance.write', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
   assistant: ['attendance.read', 'attendance.write', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
@@ -199,6 +199,46 @@ function workstationFeature_(request, profile, props) {
     const records = readLoans().slice(1);
     const received = row => row[8] !== '' && row[8] !== undefined ? Number(row[8]) : row[4] ? Number(row[7]||1) : 0;
     const outstanding = row => Math.max(0,Number(row[7]||1)-received(row));
+    if (request.action === 'equipment.editAsset') {
+      const matches = assets.flatMap((row,index)=>row[0] && row[0]===request.code ? [index] : []);
+      if (matches.length!==1) return {error:'equipment_conflict'};
+      const index = matches[0], asset = assets[index];
+      const current = [asset[1],asset[2],Number(asset[3]),asset[4]||'',asset[5]||''];
+      if (JSON.stringify(current)!==JSON.stringify(request.original)) return {error:'equipment_conflict'};
+      if (!Object.prototype.hasOwnProperty.call(EQUIPMENT_PREFIXES,request.category)) throw new Error('Invalid category');
+      const open = records.filter(row=>row[0] && row[5]===request.code).reduce((sum,row)=>sum+outstanding(row),0);
+      if (!(qty>=open)) return {error:'equipment_quantity'};
+      const fields = [workstationText_(request.name,180),request.category,qty,
+        workstationText_(request.location,180,true),workstationText_(request.note,400,true)];
+      stock.getRange(index+2,2,1,5).setValues([fields.map(workstationLiteral_)]);
+      return {saved:1};
+    }
+    if (request.action === 'equipment.editLoan') {
+      const matches = records.flatMap((row,index)=>row[0] && row[0]===request.id ? [index] : []);
+      if (matches.length!==1) return {error:'equipment_conflict'};
+      const index = matches[0], record = records[index], returned = received(record);
+      const current = [record[2],record[6]||'',Number(record[7]||1),returned,record[9]||''];
+      if (JSON.stringify(current)!==JSON.stringify(request.original)) return {error:'equipment_conflict'};
+      const out = String(record[3]||'').slice(0,10);
+      if (request.due && (!workstationValidDate_(request.due) || (workstationValidDate_(out)&&request.due<out)))
+        return {error:'equipment_due'};
+      if (!Number.isSafeInteger(returned)||returned<0||qty<returned) return {error:'equipment_quantity'};
+      if (qty!==current[2]) {
+        const asset = assets.find(row=>row[0] && row[0]===record[5]);
+        const otherLoans = records.reduce((sum,row,i)=>i!==index && row[0] && row[5]===record[5] ? sum+outstanding(row) : sum,0);
+        if (!asset || (qty>current[2] && !(otherLoans+qty-returned<=Number(asset[3]))))
+          return {error:'equipment_quantity'};
+      }
+      const range = loans.getRange(index+2,3,1,8);
+      const values = range.getValues()[0];
+      values[0] = workstationText_(request.borrower,120);
+      values[4] = request.due;
+      values[5] = qty;
+      values[6] = returned;
+      values[7] = workstationText_(request.note,400,true);
+      range.setValues([values.map(workstationLiteral_)]);
+      return {saved:1};
+    }
     if (request.action === 'equipment.borrow') {
       const asset = assets.find(row=>row[0] && row[0]===request.code);
       if (!asset || !workstationValidDate_(request.due) || request.due<today) throw new Error('Invalid loan');
