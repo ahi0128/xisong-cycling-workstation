@@ -6,6 +6,8 @@
  const range = name => '/values/' + encodeURIComponent(name);
  const labels = {use:'用款申請',income:'收入',expense:'支出'};
  const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
+ let mirroredIds = new Set();
+ const publishedMonths = new Set();
  let reviewer = false, data = [], decisions = new Map(), pending;
  const cell = value => ({userEnteredValue: typeof value === 'number' ? {numberValue:value} : {stringValue:value}});
  const append = (sheetId, values) => ({appendCells:{sheetId,rows:[{values:values.map(cell)}],fields:'userEnteredValue'}});
@@ -32,6 +34,7 @@
    request(range("'送審'!A2:H")+'?valueRenderOption=UNFORMATTED_VALUE'), request(range("'審核結果'!A2:H")+'?valueRenderOption=UNFORMATTED_VALUE')
   ]);
   let results = mirror.values || [];
+  mirroredIds = new Set(results.map(row=>row[0]));
   reviewer = false;
   try {
    const audit = await sheetsRequest(range("'總務審核紀錄'!A1:H")+'?valueRenderOption=UNFORMATTED_VALUE');
@@ -69,6 +72,27 @@
    item.className = 'row';
    const decision = decisions.get(row.id);
    item.textContent = [row.date,labels[row.kind],row.title,money(row.cents),decision?.[1]||'待審核'].join(' ｜ ');
+   if (decision && reviewer) {
+    item.append(document.createTextNode(mirroredIds.has(row.id)?' ｜ 總務頁已同步':' ｜ 總務頁待同步'));
+    if (!mirroredIds.has(row.id)) item.append(button('重試同步',()=>run(async()=>{
+     await refresh();
+     if (!reviewer || !decisions.has(row.id)) throw new Error('無法核對正式審核紀錄。');
+     await copyResults([decisions.get(row.id)]);
+     renderQueue();
+     status('總務頁已同步。','success');
+    })));
+    if (decision[1]==='已入帳') {
+     const month=row.date.slice(0,7);
+     item.append(document.createTextNode(publishedMonths.has(month)?' ｜ 家長月報已提交':' ｜ 家長月報發布狀態未確認'));
+     item.append(button('重新發布 '+month+' 月報',()=>run(async()=>{
+      await refresh();
+      if (!reviewer || decisions.get(row.id)?.[1]!=='已入帳') throw new Error('無法核對正式入帳紀錄。');
+      await publishReviewMonth(month);
+      renderQueue();
+      status('家長月報已提交，部署後更新。','success');
+     })));
+    }
+   }
    if (!decision) {
     if (row.note) item.append(document.createTextNode(' ｜ '+row.note));
     if (row.kind==='expense') {
@@ -116,12 +140,13 @@
       throw new Error('請使用尚未入帳且金額足夠的用款許可。');
      requests.push(marker('spent_'+row.permit));
     }
-    const ledger = await sheetsRequest(range("'收支明細'!A1:G1"));
+    const ledger = await sheetsRequest(range("'收支明細'!A1:H1"));
     const header = ledger.values?.[0]||[];
     if (['日期','用途','收入（元）','支出（元）','備註','憑證連結'].some((value,index)=>header[index]!==value) ||
-        (header[6] && header[6]!=='登記識別碼')) throw new Error('正式帳簿欄位有誤。');
+        (header[6] && header[6]!=='登記識別碼') || (header[7] && header[7]!=='公開備註')) throw new Error('正式帳簿欄位有誤。');
     if (!header[6]) requests.push({updateCells:{start:{sheetId:1013939567,rowIndex:0,columnIndex:6},rows:[{values:[cell('登記識別碼')]}],fields:'userEnteredValue'}});
-    const entry = append(1013939567,[Date.parse(row.date)/86400000+25569,row.title,row.kind==='income'?row.cents/100:'',row.kind==='expense'?row.cents/100:'',row.note,'',row.id]);
+    if (!header[7]) requests.push({updateCells:{start:{sheetId:1013939567,rowIndex:0,columnIndex:7},rows:[{values:[cell('公開備註')]}],fields:'userEnteredValue'}});
+    const entry = append(1013939567,[Date.parse(row.date)/86400000+25569,row.title,row.kind==='income'?row.cents/100:'',row.kind==='expense'?row.cents/100:'','','',row.id,row.note]);
     entry.appendCells.rows[0].values[0].userEnteredFormat = {numberFormat:{type:'DATE',pattern:'yyyy/mm/dd'}};
     entry.appendCells.fields += ',userEnteredFormat.numberFormat';
     requests.push(entry);
@@ -138,30 +163,33 @@
    const notices = [];
    try { await copyResults([result]); } catch (_) { notices.push('總務頁待同步，可按「同步審核結果」'); }
    if (posting) {
-    try {
-     const ledger = await loadCloudLedger();
-     const token = $('publishToken').value.trim() || rememberedToken;
-     if (!token) throw new Error('缺少發布權杖');
-     const month = row.date.slice(0,7);
-     const {values,details} = buildCloudMonth(ledger.rows,month,ledger.opening);
-     await publishMonth(token,month,values,details,{fromCloud:true});
-     rememberToken(token);
-     $('publishToken').value='';
-    } catch (_) { notices.push('家長月報待發布，請重新發布所選月份'); }
+    try { await publishReviewMonth(row.date.slice(0,7)); }
+    catch (_) { notices.push('家長月報待發布，可直接按該筆的重新發布按鈕'); }
    }
+   renderQueue();
    status(result[1]+'。'+notices.join('。'),notices.length?'error':'success');
   });
+ }
+ async function publishReviewMonth(month) {
+  const token = $('publishToken').value.trim() || rememberedToken;
+  if (!token) throw new Error('請先設定家長月報發布權杖。');
+  await publishMonth(token,month,undefined,undefined,{fromCloud:true});
+  rememberToken(token);
+  $('publishToken').value='';
+  publishedMonths.add(month);
  }
  async function copyResults(results) {
   const mirror = await request(range("'審核結果'!A2:A"));
   const existing = new Set((mirror.values||[]).map(row=>row[0]));
   const values = results.filter(row=>!existing.has(row[0]));
   if (values.length) await request(range("'審核結果'!A1:H")+':append?valueInputOption=RAW','POST',{values});
+  for (const row of results) mirroredIds.add(row[0]);
  }
  $('financeSync').onclick = ()=>run(async()=>{
   await refresh();
   if (!reviewer) throw new Error('請使用教練帳號同步審核結果。');
   await copyResults([...decisions.values()]);
+  renderQueue();
   status('已同步審核結果。','success');
  });
  $('openFinanceReview').onclick = ()=>{
