@@ -36,7 +36,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 </style>
 <main>
 <header><p class="site-label">管理工作站</p><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
-<div class="header-actions"><button type="button" id="openFinanceReview">帳務送審／審核</button><button type="button" id="roleLogin" hidden>使用 Google 帳號登入差勤</button><button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer">開啟正式雲端帳本</a></div>
+<div class="header-actions"><button type="button" id="openFinanceReview">帳務送審／審核</button><button type="button" id="roleLogin" hidden>使用 Google 帳號登入工作站</button><button type="button" id="loadCloud" class="primary">使用 Google 帳號登入</button><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer">開啟正式雲端帳本</a></div>
 <p id="ledgerSource" role="status">登入時可一併授權試算表和雲端硬碟，同一分頁即可記帳與上傳憑證。</p>
 </header>
 <section id="financeReview" hidden aria-labelledby="financeRole">
@@ -456,7 +456,7 @@ let equipmentAssets=[];
 const equipmentToday=()=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
 const equipmentTime=value=>/^\d{4}-\d{2}-\d{2}$/.test(value)?value:new Intl.DateTimeFormat('zh-TW',{timeZone:'Asia/Taipei',dateStyle:'medium',timeStyle:'short'}).format(new Date(value));
 async function readEquipment(){
- const {values=[]}=await sheetsRequest(equipmentRange('A1:J'));
+ const {values=[]}=await equipmentData('loans');
  if(values[0]?.[0]!=='登記識別碼'||values[0]?.[9]!=='備註')throw new Error('器材借用分頁欄位不符。');
  return values.slice(1).flatMap(([id,item,borrower,out,back,code,due,quantity,returned,note],index)=>{
   const qty=Number(quantity||1);
@@ -464,8 +464,12 @@ async function readEquipment(){
   return id?[{id,item,borrower,out,back,code,due,qty,received,note,left:Math.max(0,qty-received),row:index+2}]:[];
  });
 }
+async function equipmentData(key){
+ if(window.workstationRole?.active())return {values:(await window.workstationRole.request('equipment.read'))[key]};
+ return sheetsRequest(key==='loans'?equipmentRange('A1:J'):'/values/'+encodeURIComponent("'器材清單'!A1:F"));
+}
 async function equipmentSnapshot(){
- const [records,{values=[]}]=await Promise.all([readEquipment(),sheetsRequest('/values/'+encodeURIComponent("'器材清單'!A1:F"))]);
+ const [records,{values=[]}]=await Promise.all([readEquipment(),equipmentData('assets')]);
  if(values[0]?.[0]!=='物品編號')throw new Error('器材清單欄位不符。');
  const outstanding=new Map();
  for(const entry of records)outstanding.set(entry.code,(outstanding.get(entry.code)||0)+entry.left);
@@ -529,7 +533,9 @@ async function refreshEquipment(){
     return runEquipment(async()=>{
      const current=(await readEquipment()).find(entry=>entry.id===record.id);
      if(!current||!Number.isSafeInteger(count)||count<1||count>current.left)throw new Error('歸還數量須介於 1 與目前未還數量之間。');
-     const r=await sheetsRequest('/values:batchUpdate',{method:'POST',body:JSON.stringify({valueInputOption:'RAW',data:[
+     const r=window.workstationRole?.active()
+      ? {totalUpdatedCells:2*(await window.workstationRole.request('equipment.return',{id:record.id,quantity:count})).saved}
+      : await sheetsRequest('/values:batchUpdate',{method:'POST',body:JSON.stringify({valueInputOption:'RAW',data:[
       {range:"'器材借用'!E"+current.row,values:[[new Date().toISOString()]]},
       {range:"'器材借用'!I"+current.row,values:[[current.received+count]]}
      ]})});
@@ -604,7 +610,10 @@ assetForm.onsubmit=event=>{
   code=nextEquipmentCode(category,assets);
   const range='/values/'+encodeURIComponent("'器材清單'!A1:F");
   const values=[[code,name,category,quantity,fields.get('location').trim(),'']];
-  const result=await sheetsRequest(range+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{
+  const registered=window.workstationRole?.active()
+   ? await window.workstationRole.request('equipment.register',{name,category,quantity,location:values[0][4]}) : null;
+  if(registered)code=registered.code;
+  const result=registered ? {updates:{updatedRows:registered.saved}} : await sheetsRequest(range+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{
    method:'POST',body:JSON.stringify({values})
   });
   if(result.updates?.updatedRows!==1)throw new Error('無法確認新增結果。');
@@ -622,7 +631,7 @@ async function runEquipment(action,message){
  const section=$('equipment');
  for(const control of section.querySelectorAll('input,select,button'))control.disabled=true;
  try{
-  await authorizeSheets();
+  if(!window.workstationRole?.active())await authorizeSheets();
   await action();
   if(message)feedback(typeof message==='function'?message():message,status,'success');
   else $(status).hidden=true;
@@ -643,7 +652,9 @@ $('equipmentForm').onsubmit=event=>{
   const asset=assets.find(a=>a.code===code);
   if(!asset||!borrower||!Number.isSafeInteger(qty)||qty<1||qty>asset.available)throw new Error('請確認器材、借用人及可用數量。');
   if(!due||due<equipmentToday())throw new Error('預計歸還日不得早於今天。');
-  const response=await sheetsRequest(equipmentRange('A1:J')+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{
+  const response=window.workstationRole?.active()
+   ? {updates:{updatedRows:(await window.workstationRole.request('equipment.borrow',{code,borrower,quantity:qty,due})).saved}}
+   : await sheetsRequest(equipmentRange('A1:J')+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{
    method:'POST',body:JSON.stringify({values:[[crypto.randomUUID(),asset.name,borrower,new Date().toISOString(),'',code,due,qty,0,'']]})
   });
   if(response.updates?.updatedRows!==1)throw new Error('無法確認借出結果。');
@@ -1415,6 +1426,7 @@ $('briefClose').onclick=()=>briefDialog.close();
 $('openBrief').onclick=openBrief;
 $('briefRefresh').onclick=openBrief;
 async function readBrief(){
+ if(window.workstationRole?.active())return (await window.workstationRole.request('brief.read')).rows;
  const {values=[]}=await sheetsRequest(briefRange);
  if(!briefHeaders.every((key,i)=>values[0]?.[i]===key))throw new Error('找不到今日交接欄位。');
  return values.slice(1).filter(row=>row[0]===briefDate);
@@ -1441,7 +1453,7 @@ async function runBrief(action){
  if(briefBusy)return;
  briefBusy=true;
  const submit=briefForm.querySelector('button[type="submit"]');submit.disabled=true;
- try{await authorizeSheets();await action()}
+ try{if(!window.workstationRole?.active())await authorizeSheets();await action()}
  catch(error){feedback(error.message,'briefStatus','error')}
  finally{briefBusy=false;submit.disabled=false}
 }
@@ -1463,7 +1475,9 @@ briefForm.onsubmit=event=>{
  if(date!==briefDate){void openBrief();return}
  return runBrief(async()=>{
   const values=[[briefDate,fields.get('role'),fields.get('kind'),fields.get('audience'),author,body,new Date().toISOString()]];
-  const result=await sheetsRequest(briefRange+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{method:'POST',body:JSON.stringify({values})});
+  const result=window.workstationRole?.active()
+   ? {updates:{updatedRows:(await window.workstationRole.request('brief.write',{kind:fields.get('kind'),audience:fields.get('audience'),body})).saved}}
+   : await sheetsRequest(briefRange+':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{method:'POST',body:JSON.stringify({values})});
   if(result.updates?.updatedRows!==1)throw new Error('無法確認留言已儲存，請重新開啟今日交接核對。');
   briefForm.elements.namedItem('body').value='';
   try{renderBrief(await readBrief())}catch{throw new Error('已張貼留言，請重新開啟今日交接查看。')}
