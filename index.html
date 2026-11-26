@@ -130,6 +130,11 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <section id="dues" hidden>
 <h2>每月隊費繳納清單</h2>
 <label>繳費月份<input id="duesMonth" type="month" required></label>
+<form id="duesRateForm">
+<label>每人應繳金額<select id="duesRateChoice" required><option value="">選擇本月金額</option><option value="2500">2,500 元</option><option value="custom">自訂金額</option></select></label>
+<label id="duesRateCustomLabel" hidden>自訂金額（元）<input id="duesRateCustom" type="number" min="1" max="999999" step="1" disabled></label>
+<button type="submit" id="duesRateApply">套用本月全體</button>
+</form><p id="duesRateStatus" role="status"></p>
 <p id="duesRosterStatus" role="status"></p><p id="duesTotals"></p>
 <form id="duesAdd"><label>學生姓名或代號<input id="duesName" required maxlength="60"></label><button>加入本月清單</button></form>
 <button type="button" id="startDues">帶入固定名單</button>
@@ -141,7 +146,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <form id="rosterAdd"><label>新增隊員姓名或代號<input id="rosterName" maxlength="60" required></label><button>加入固定名單</button></form>
 <div id="rosterRows"></div>
 </details>
-<p>每人每月 2,500 元。收款請從此頁登記。確認實收會同步雲端繳納清單，並以今天為收款日入帳。既有本機勾選須先核對是否已入帳。本月名單調整仍保存在目前瀏覽器。</p>
+<p>每月金額由教練設定，套用至該月全體未繳隊員。已繳紀錄保留原金額。確認實收會同步雲端繳納清單，並以今天為收款日入帳。既有本機勾選須先核對是否已入帳。本月名單調整仍保存在目前瀏覽器。</p>
 <p id="duesStatus" role="status"></p><div id="duesRows"></div>
 </section><section id="contacts" hidden>
 <h2>車隊通訊錄</h2>
@@ -1235,29 +1240,102 @@ async function publishOfficialMonth(month, values, details){
  $('publishToken').value='';
  return true;
 }
-const monthlyDues=250000;
+const duesRateKey='xisong.monthly-dues.v1';
+let cloudDuesRates;
+const duesRateId=month=>200000000+Number(month.replace('-',''));
+function parseDuesRate(value){
+ return /^[1-9]\d{0,5}$/.test(String(value))?Number(value)*100:0;
+}
+async function readDuesRates(){
+ const lookup={metadataKey:duesRateKey,visibility:'DOCUMENT'};
+ const result=await sheetsRequest('/developerMetadata:search',{
+  method:'POST',body:JSON.stringify({dataFilters:[{developerMetadataLookup:lookup}]})
+ });
+ const rates=new Map();
+ for(const {developerMetadata:entry} of result.matchedDeveloperMetadata||[]){
+  const [month,yuan]=String(entry.metadataValue).split(':');
+  const amount=parseDuesRate(yuan);
+  if(!validDuesMonth(month)||!amount||rates.has(month)||entry.metadataId!==duesRateId(month))
+   throw new Error('雲端隊費金額設定有誤。');
+  rates.set(month,amount);
+ }
+ return rates;
+}
+function renderDuesRate(){
+ const amount=cloudDuesRates?.get(duesMonth());
+ $('duesRateStatus').textContent=!cloudDuesRates?'尚未載入雲端金額。':amount?'本月每人應繳 '+money(amount)+'。':'本月尚未設定金額。';
+}
+function resetDuesRateChoice(){
+ $('duesRateForm').reset();
+ $('duesRateChoice').onchange();
+}
+async function applyDuesRate(event){
+ event.preventDefault();
+ if(duesWritePending)return;
+ const month=duesMonth();
+ const choice=$('duesRateChoice').value;
+ const amount=parseDuesRate(choice==='custom'?$('duesRateCustom').value:choice);
+ if(!validDuesMonth(month)||!amount)return;
+ if(!confirm('將 '+month+' 全體未繳隊員的應繳金額設為每人 '+money(amount)+'？'))return;
+ duesWritePending=true;
+ $('duesRateApply').disabled=true;
+ try{
+  await authorizeSheets();
+  const rates=await readDuesRates();
+  const prior=rates.get(month);
+  if(prior!==cloudDuesRates?.get(month)){
+   cloudDuesRates=rates;
+   renderDues();
+   throw new Error('本月金額已在其他裝置更新，請確認畫面後再套用。');
+  }
+  if(prior!==amount){
+   const metadataId=duesRateId(month);
+   const metadataValue=month+':'+amount/100;
+   const request=prior?{updateDeveloperMetadata:{
+    dataFilters:[{developerMetadataLookup:{metadataId,metadataKey:duesRateKey,metadataValue:month+':'+prior/100}}],
+    developerMetadata:{metadataValue},fields:'metadataValue'
+   }}:{createDeveloperMetadata:{
+    developerMetadata:{metadataId,metadataKey:duesRateKey,metadataValue,visibility:'DOCUMENT',location:{spreadsheet:true}}
+   }};
+   await sheetsRequest(':batchUpdate',{method:'POST',body:JSON.stringify({requests:[request]})});
+  }
+  cloudDuesRates=await readDuesRates();
+  renderDues();
+  if(cloudDuesRates.get(month)!==amount)throw new Error('雲端金額已變更，請確認後再套用。');
+  if(duesMonth()===month)resetDuesRateChoice();
+  feedback(month+' 已套用每人 '+money(amount)+'。','duesStatus','success');
+ }catch(error){feedback(error.message,'duesStatus','error')}
+ finally{duesWritePending=false;$('duesRateApply').disabled=false}
+}
 const duesHeaders=['繳費月份','姓名／代號','應繳金額','實繳金額','繳費日期','繳費狀態','備註'];
 async function readDuesPayments(){
  const {values=[]}=await sheetsRequest('/values/'+encodeURIComponent("'每月隊費繳納'!A:G"));
  if(duesHeaders.some((name,index)=>values[0]?.[index]!==name))throw new Error('雲端繳納分頁欄位不符。');
  return values.slice(1).flatMap((row,index)=>{
-  const [month,name,,received,date,status,note]=row;
-  return validDuesMonth(month)&&name?[{month,name,received:toCloudCents(received),date:date||'',status,paid:status==='已繳',note:note||'',cloud:true,rowIndex:index+1}]:[];
+  const [month,name,expected,received,date,status,note]=row;
+  return validDuesMonth(month)&&name?[{month,name,expected:toCloudCents(expected),received:toCloudCents(received),date:date||'',status,paid:status==='已繳',note:note||'',cloud:true,rowIndex:index+1}]:[];
  });
 }
 async function recordDuesPayment(item){
  if(duesWritePending)return;
  const month=duesMonth(),paid=!(item.cloud&&item.paid);
  if(!validDuesMonth(month))return;
+ const monthlyDues=cloudDuesRates?.get(month);
+ if(paid&&!monthlyDues){feedback('請先設定並套用本月隊費金額。','duesStatus','error');return}
  const action=paid?'確認已實收 '+money(monthlyDues)+'？若這筆已手動入帳，請取消。':'更正為未繳，並撤銷系統入帳的這筆收入？';
  if(!confirm(month+' ｜ '+item.name+'\n'+action))return;
  duesWritePending=true;
  let written=false;
  try{
   await authorizeSheets();
-  const [payments,{values=[]}]=await Promise.all([
-   readDuesPayments(),sheetsRequest('/values/'+encodeURIComponent("'收支明細'!A:G"))
+  const [payments,{values=[]},rates]=await Promise.all([
+   readDuesPayments(),sheetsRequest('/values/'+encodeURIComponent("'收支明細'!A:G")),readDuesRates()
   ]);
+  cloudDuesRates=rates;
+  if(paid&&rates.get(month)!==monthlyDues){
+   renderDues();
+   throw new Error('本月金額已變更，請核對後再登記。');
+  }
   const matches=payments.filter(row=>row.month===month&&row.name===item.name);
   const current=matches[0];
   const id='dues:'+month+':'+item.name;
@@ -1291,7 +1369,7 @@ async function recordDuesPayment(item){
   const requests=[];
   if(!values[0]?.[6])requests.push({updateCells:{start:{sheetId:1013939567,rowIndex:0,columnIndex:6},rows:[{values:[cell('登記識別碼')]}],fields:'userEnteredValue'}});
   requests.push(
-   ...write(26062302,current?.rowIndex,[month,item.name,monthlyDues/100,paid?monthlyDues/100:0,date,paid?'已繳':'未繳',current?.note||'']),
+   ...write(26062302,current?.rowIndex,[month,item.name,(paid?monthlyDues:rates.get(month)||current.expected)/100,paid?monthlyDues/100:0,date,paid?'已繳':'未繳',current?.note||'']),
    ...write(1013939567,linked[0],paid?[date,'隊費（'+month+'）',monthlyDues/100,'','','',id]:['','','','','','',id])
   );
   await sheetsRequest(':batchUpdate',{method:'POST',body:JSON.stringify({requests})});
@@ -1313,10 +1391,11 @@ let duesWritePending=false;
 async function loadDuesRoster(){
  feedback('正在載入雲端固定名單…','duesRosterStatus');
  await authorizeSheets();
- const [{values=[]}, payments]=await Promise.all([
-  sheetsRequest('/values/'+encodeURIComponent("'隊費固定名單'!A:B")),readDuesPayments()
+ const [{values=[]}, payments, rates]=await Promise.all([
+  sheetsRequest('/values/'+encodeURIComponent("'隊費固定名單'!A:B")),readDuesPayments(),readDuesRates()
  ]);
  cloudDuesPayments=payments;
+ cloudDuesRates=rates;
  if(values[0]?.[0]?.trim()!=='姓名')throw new Error('找不到姓名欄。');
  const names=[...new Set(values.slice(1).map(row=>String(row?.[0]??'').trim()).filter(Boolean))];
  if(!validRoster(names))throw new Error('雲端名單有格式錯誤。');
@@ -1343,6 +1422,7 @@ function validDues(data){
    typeof item.paid==='boolean')&&new Set(items.map(item=>item.name)).size===items.length));
 }
 function renderDues(){
+ renderDuesRate();
  renderRoster();
  const items=duesList();
  const paid=items.filter(item=>item.paid&&item.cloud).length;
@@ -1357,7 +1437,8 @@ function renderDues(){
   const line=document.createElement('div');
   line.className='row '+(item.cloud&&item.paid?'dues-paid':item.paid||item.cloud&&item.status!=='未繳'?'':'dues-unpaid');
   const label=item.cloud?item.status:item.paid?'本機已勾選 · 待核對':'未繳';
-  line.append(document.createTextNode(item.name+' ｜ '+label+' '));
+  const amount=item.cloud&&item.status!=='未繳'?item.received:cloudDuesRates?.get(duesMonth());
+  line.append(document.createTextNode(item.name+' ｜ '+label+(amount!==undefined?' ｜ '+money(amount):'')+' '));
   if(!item.cloud||['已繳','未繳'].includes(item.status))
    line.append(button(item.cloud&&item.paid?'更正為未繳':item.paid?'確認實收並入帳':'標記已繳並入帳',()=>recordDuesPayment(item)));
   if(!item.cloud||(item.status==='未繳'&&item.received===0))line.append(button('移出本月',()=>{
@@ -1440,7 +1521,14 @@ function initRoster(){
 function initDues(){
  initRoster();
  $('duesMonth').value=today.slice(0,7);
- $('duesMonth').onchange=()=>{$('duesStatus').textContent='';renderDues()};
+ $('duesRateForm').onsubmit=applyDuesRate;
+ $('duesRateChoice').onchange=()=>{
+  const custom=$('duesRateChoice').value==='custom';
+  $('duesRateCustomLabel').hidden=!custom;
+  $('duesRateCustom').disabled=!custom;
+  $('duesRateCustom').required=custom;
+ };
+ $('duesMonth').onchange=()=>{$('duesStatus').textContent='';resetDuesRateChoice();renderDues()};
  $('duesAdd').onsubmit=async event=>{
   event.preventDefault();
   const name=$('duesName').value.trim();
