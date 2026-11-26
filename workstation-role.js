@@ -6,7 +6,7 @@
  if (endpoint.origin !== 'https://script.google.com' || !endpoint.pathname.endsWith('/exec')) return;
  const redirect = location.origin + location.pathname;
  const storageKey = 'xisong-role-signin';
- let session, coachRole=false;
+ let session, coachRole=false, allowedActions=[];
  const publicViews=['team','domestic','international'];
  const encode = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
   .replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
@@ -23,6 +23,7 @@
    if (result.error==='sign_in_required') {
     session=undefined;
     coachRole=false;
+    allowedActions=[];
     for(const id of ['attendance','equipment','ledger','dues','contacts','openBrief','openFinanceReview','loadCloud']) $(id).hidden=true;
     for(const button of document.querySelectorAll('#workstationNav [data-view]'))button.hidden=!publicViews.includes(button.dataset.view);
     $('racePublishSettings').hidden=true;
@@ -32,7 +33,10 @@
    throw new Error({
     forbidden:'此 Google 帳號沒有這項工作站權限。',
     sign_in_required:'登入已失效，請重新登入。',
-    busy:'差勤正在儲存，請稍後重試。'
+    equipment_conflict:'紀錄已被更新，請關閉視窗並重新整理後再編輯。',
+    equipment_quantity:'數量與庫存、已借出或已歸還數量不符。',
+    equipment_due:'預計歸還日不能早於借出日。',
+    busy:'資料正在儲存，請稍後重試。'
    }[result.error]||'無法完成這項操作，請重新核對資料。');
   }
   return result;
@@ -69,6 +73,7 @@
   const profile = result.profile;
   if (!profile || (!profile.actions.length && profile.role!=='treasurer')) throw new Error('此帳號的工作站功能尚未開通。');
   session=result.session;
+  allowedActions=profile.actions;
   control.hidden=true;
   const views = ['attendance','equipment'].filter(view=>profile.actions.includes(view+'.read'));
   const isCoach = profile.level === 3;
@@ -98,7 +103,7 @@
   }
  }
  const restoreQuery = location.search;
- window.workstationRole = {active:()=>Boolean(session), isCoach:()=>coachRole, request};
+ window.workstationRole = {active:()=>Boolean(session), isCoach:()=>coachRole, can:action=>allowedActions.includes(action), request};
  window.workstationAttendance = {
   active:()=>Boolean(session),
   read:(date,period)=>request('attendance.read',{date,period}),
