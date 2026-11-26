@@ -479,14 +479,14 @@ async function readEquipment(){
 }
 async function equipmentData(key){
  if(window.workstationRole?.active())return {values:(await window.workstationRole.request('equipment.read'))[key]};
- return sheetsRequest(key==='loans'?equipmentRange('A1:J'):'/values/'+encodeURIComponent("'器材清單'!A1:F"));
+ return sheetsRequest(key==='loans'?equipmentRange('A1:J'):'/values/'+encodeURIComponent("'器材清單'!A1:G"));
 }
 async function equipmentSnapshot(){
  const [records,{values=[]}]=await Promise.all([readEquipment(),equipmentData('assets')]);
  if(values[0]?.[0]!=='物品編號')throw new Error('器材清單欄位不符。');
  const outstanding=new Map();
  for(const entry of records)outstanding.set(entry.code,(outstanding.get(entry.code)||0)+entry.left);
- const assets=values.slice(1).filter(row=>row[0]).map(([code,name,category,total,location,note])=>{
+ const assets=values.slice(1).filter(row=>row[0]&&!row[6]).map(([code,name,category,total,location,note])=>{
   const loaned=outstanding.get(code)||0;
   return {code,name,category,total,location,note,loaned,available:Math.max(0,Number(total)-loaned)};
  });
@@ -554,6 +554,15 @@ equipmentEditForm.onsubmit=async event=>{
   for(const control of equipmentEditForm.querySelectorAll('input,select,button'))control.disabled=false;
  }
 };
+function removeEquipmentAsset(asset){
+ if(!window.workstationRole?.can('equipment.removeAsset'))return;
+ if(!confirm('從器材庫移除 '+asset.code+' ｜ '+asset.name+'？\n既有借用紀錄會保留。'))return;
+ return runEquipment(async()=>{
+  const result=await window.workstationRole.request('equipment.removeAsset',{code:asset.code,name:asset.name});
+  if(result.saved!==1)throw new Error('無法確認刪除結果。');
+  try{await refreshEquipment()}catch{throw new Error('器材已移除，請重新整理庫存。')}
+ },'已從器材庫移除。');
+}
 function renderEquipmentStock(){
  const category=$('equipmentCategory').value;
  const query=$('equipmentSearch').value.trim().normalize('NFKC').toLowerCase();
@@ -585,6 +594,11 @@ function renderEquipmentStock(){
     const editButton=button('編輯器材資料',()=>openEquipmentEdit('equipment.editAsset',asset));
     editButton.setAttribute('aria-label','編輯器材資料：'+asset.name+' '+asset.code);
     line.append(editButton);
+   }
+   if(window.workstationRole?.can('equipment.removeAsset')){
+    const removeButton=button('刪除器材',()=>removeEquipmentAsset(asset));
+    removeButton.setAttribute('aria-label','刪除器材：'+asset.name+' '+asset.code);
+    line.append(removeButton);
    }
    group.append(line);
   }
@@ -1875,5 +1889,5 @@ async function init(){
 init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。','status','error'));
 </script>
 <script src="finance-review.js?v=public-notes"></script>
-<script src="workstation-role.js?v=equipment-edit"></script>
+<script src="workstation-role.js?v=equipment-remove"></script>
 </html>
