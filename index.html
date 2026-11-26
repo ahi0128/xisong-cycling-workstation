@@ -187,6 +187,14 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 
 <details><summary>器材庫存</summary><label>類別<select id="equipmentCategory"></select></label><div id="equipmentStock"></div></details>
 <details><summary>已歸還紀錄</summary><div id="equipmentReturned"></div></details>
+<dialog id="equipmentEditDialog" aria-labelledby="equipmentEditTitle">
+<h3 id="equipmentEditTitle">編輯器材</h3>
+<form id="equipmentEditForm">
+<div id="equipmentEditFields"></div>
+<p id="equipmentEditStatus" role="status" hidden></p>
+<button type="submit" class="primary">儲存修改</button> <button id="equipmentEditCancel" type="button">取消</button>
+</form>
+</dialog>
 </section><section id="races" hidden><h2 id="raceTitle"></h2><p id="teamRaceParentLink"><a href="https://ahi0128.github.io/xisong-cycling-parent/#team-calendar" target="_blank" rel="noopener noreferrer">查看家長頁的車隊參賽</a></p>
 <details id="racePublishSettings"><summary>賽程發布設定</summary><label>GitHub 發布權杖（與家長月報共用） <input id="raceToken" type="password" autocomplete="off" spellcheck="false"></label></details>
 <p id="raceStatus" role="status" hidden></p><div id="raceList"></div></section>
@@ -481,6 +489,64 @@ async function equipmentSnapshot(){
  assets.sort(compareEquipmentAssets);
  return {records,assets};
 }
+const equipmentEditDialog=$('equipmentEditDialog');
+const equipmentEditForm=$('equipmentEditForm');
+let equipmentEdit;
+$('equipmentEditCancel').onclick=()=>equipmentEditDialog.close();
+equipmentEditDialog.addEventListener('cancel',event=>{if(equipmentBusy)event.preventDefault()});
+function openEquipmentEdit(action, record) {
+ const asset=action==='equipment.editAsset';
+ const fields=asset
+  ? [['name','品名',record.name,180],['category','類別',record.category],
+   ['quantity','總數量',record.total,'number'],['location','存放位置',record.location,180],['note','備註',record.note,400]]
+  : [['borrower','借用人',record.borrower,120],['due','預計歸還日',record.due,'date'],
+   ['quantity','借出數量',record.qty,'number'],['note','備註',record.note,400]];
+ const original=asset ? [record.name,record.category,Number(record.total),record.location||'',record.note||'']
+  : [record.borrower,record.due||'',record.qty,record.received,record.note||''];
+ equipmentEdit={action,code:record.code,id:record.id,original};
+ $('equipmentEditTitle').textContent=(asset?'編輯器材':'編輯借用')+' ｜ '+(record.code||record.item||'');
+ $('equipmentEditStatus').hidden=true;
+ $('equipmentEditFields').replaceChildren(...fields.map(([key,title,value,type])=>{
+  const label=document.createElement('label');
+  const input=document.createElement(key==='category'?'select':'input');
+  if(key==='category') {
+   const categories=[...assetPrefixes.keys()];
+   for(const group of categories)input.add(new Option(group,group));
+   if(value&&!categories.includes(value))input.add(new Option(value,value));
+  } else {
+   input.type=typeof type==='number'?'text':type;
+   if(typeof type==='number')input.maxLength=type;
+   if(type==='number'){ input.min=String(asset?1:Math.max(1,record.received)); input.step='1'; }
+  }
+  input.name=key;
+  input.value=value??'';
+  input.required=['name','borrower','quantity','category'].includes(key);
+  label.append(title,input);
+  return label;
+ }));
+ equipmentEditDialog.showModal();
+}
+equipmentEditForm.onsubmit=async event=>{
+ event.preventDefault();
+ if(equipmentBusy||!equipmentEdit||!window.workstationRole?.can(equipmentEdit.action))return;
+ const formData=Object.fromEntries(new FormData(equipmentEditForm));
+ formData.quantity=Number(formData.quantity);
+ const edit=equipmentEdit;
+ equipmentBusy=true;
+ for(const control of equipmentEditForm.querySelectorAll('input,select,button'))control.disabled=true;
+ try{
+  const {action,...identity}=edit;
+  const result=await window.workstationRole.request(action,{...formData,...identity});
+  if(result.saved!==1)throw new Error('無法確認修改結果。');
+  equipmentEditDialog.close();
+  try{await refreshEquipment();feedback('已儲存修改。','equipmentStatus','success')}
+  catch{feedback('修改已儲存，請重新整理器材清單。','equipmentStatus','error')}
+ }catch(error){feedback(error.message,'equipmentEditStatus','error')}
+ finally{
+  equipmentBusy=false;
+  for(const control of equipmentEditForm.querySelectorAll('input,select,button'))control.disabled=false;
+ }
+};
 function renderEquipmentStock(){
  const category=$('equipmentCategory').value;
  const list=$('equipmentStock');
@@ -490,6 +556,7 @@ function renderEquipmentStock(){
   line.textContent=a.code+' ｜ '+a.name+' ｜ 可用 '+a.available+'/'+a.total+
    (a.loaned>Number(a.total)?' ｜ 借出超出庫存，請核對':'')+
    (a.location?' ｜ '+a.location:'')+(a.note?' ｜ '+a.note:'');
+  if(window.workstationRole?.can('equipment.editAsset'))line.append(button('編輯',()=>openEquipmentEdit('equipment.editAsset',a)));
   list.append(line);
  }
 }
@@ -531,6 +598,7 @@ async function refreshEquipment(){
     ' ｜ 未還 '+record.left+'/'+record.qty+(record.back?' ｜ 最近歸還 '+equipmentTime(record.back):'')+
     (record.code&&!known.has(record.code)?' ｜ 編號待核對':'')+(record.note?' ｜ '+record.note:'')));
    line.append(info);
+   if(window.workstationRole?.can('equipment.editLoan'))line.append(button('編輯',()=>openEquipmentEdit('equipment.editLoan',record)));
    if(!returned&&window.workstationRole?.active())line.append(button('登記歸還',()=>{
     const answer=prompt('請輸入本次歸還數量',String(record.left));
     if(answer===null)return;
@@ -1774,5 +1842,5 @@ async function init(){
 init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。','status','error'));
 </script>
 <script src="finance-review.js?v=public-notes"></script>
-<script src="workstation-role.js?v=public-races"></script>
+<script src="workstation-role.js?v=equipment-edit"></script>
 </html>
