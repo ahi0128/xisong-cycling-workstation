@@ -2,7 +2,7 @@
 // WORKSTATION_BOOK_ID, WORKSTATION_ROLES (JSON object mapping Google email to role).
 // Configure privately in Apps Script. Never put these values in the Pages frontend.
 const BRIEF_ACTIONS = ['brief.read','brief.write'];
-const EQUIPMENT_ACTIONS = ['equipment.read','equipment.register','equipment.borrow','equipment.return','equipment.editAsset','equipment.editLoan'];
+const EQUIPMENT_ACTIONS = ['equipment.read','equipment.register','equipment.borrow','equipment.return','equipment.editAsset','equipment.editLoan','equipment.removeAsset'];
 const WORKSTATION_ACCESS = Object.freeze({
   coach: ['attendance.read', 'attendance.write', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
   assistant: ['attendance.read', 'attendance.write', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
@@ -172,13 +172,13 @@ function workstationFeature_(request, profile, props) {
   }
   const stock = workstationSheet_(book,'器材清單',['物品編號','品名','類別','總數量','存放位置','備註']);
   const loans = workstationSheet_(book,'器材借用',['登記識別碼']);
-  const readStock = () => stock.getDataRange().getDisplayValues().map(row=>row.slice(0,6));
+  const readStock = () => stock.getDataRange().getDisplayValues().map(row=>row.slice(0,7));
   const readLoans = () => loans.getDataRange().getDisplayValues().map(row=>row.slice(0,10));
-  if (request.action === 'equipment.read') return {assets:readStock(), loans:readLoans()};
+  if (request.action === 'equipment.read') return {assets:readStock().filter((row,index)=>index===0||!row[6]), loans:readLoans()};
   return workstationLocked_(() => {
     const assets = readStock().slice(1);
     const qty = request.quantity;
-    if (!Number.isSafeInteger(qty) || qty < 1) throw new Error('Invalid quantity');
+    if (request.action !== 'equipment.removeAsset' && (!Number.isSafeInteger(qty) || qty < 1)) throw new Error('Invalid quantity');
     if (request.action === 'equipment.register') {
       const category = request.category;
       if (!Object.prototype.hasOwnProperty.call(EQUIPMENT_PREFIXES,category)) throw new Error('Invalid category');
@@ -199,10 +199,25 @@ function workstationFeature_(request, profile, props) {
     const records = readLoans().slice(1);
     const received = row => row[8] !== '' && row[8] !== undefined ? Number(row[8]) : row[4] ? Number(row[7]||1) : 0;
     const outstanding = row => Math.max(0,Number(row[7]||1)-received(row));
+    if (request.action === 'equipment.removeAsset') {
+      const matches = assets.flatMap((row,index)=>row[0] && row[0]===request.code ? [index] : []);
+      if (matches.length!==1) return {error:'equipment_conflict'};
+      const index=matches[0], asset=assets[index];
+      if (asset[6]) return {saved:1};
+      if (asset[1]!==request.name) return {error:'equipment_conflict'};
+      if (records.some(row=>row[0] && row[5]===request.code && !(outstanding(row)===0)))
+        return {error:'equipment_on_loan'};
+      const header=stock.getRange(1,7);
+      if (header.getValue() && header.getValue()!=='移除時間') return {error:'equipment_conflict'};
+      if (!header.getValue()) header.setValue('移除時間');
+      stock.getRange(index+2,7).setValue(new Date().toISOString());
+      return {saved:1};
+    }
     if (request.action === 'equipment.editAsset') {
       const matches = assets.flatMap((row,index)=>row[0] && row[0]===request.code ? [index] : []);
       if (matches.length!==1) return {error:'equipment_conflict'};
       const index = matches[0], asset = assets[index];
+      if (asset[6]) return {error:'equipment_conflict'};
       const current = [asset[1],asset[2],Number(asset[3]),asset[4]||'',asset[5]||''];
       if (JSON.stringify(current)!==JSON.stringify(request.original)) return {error:'equipment_conflict'};
       if (!Object.prototype.hasOwnProperty.call(EQUIPMENT_PREFIXES,request.category)) throw new Error('Invalid category');
@@ -226,7 +241,7 @@ function workstationFeature_(request, profile, props) {
       if (qty!==current[2]) {
         const asset = assets.find(row=>row[0] && row[0]===record[5]);
         const otherLoans = records.reduce((sum,row,i)=>i!==index && row[0] && row[5]===record[5] ? sum+outstanding(row) : sum,0);
-        if (!asset || (qty>current[2] && !(otherLoans+qty-returned<=Number(asset[3]))))
+        if (!asset || (qty>current[2] && (asset[6] || !(otherLoans+qty-returned<=Number(asset[3])))))
           return {error:'equipment_quantity'};
       }
       const range = loans.getRange(index+2,3,1,8);
@@ -240,7 +255,7 @@ function workstationFeature_(request, profile, props) {
       return {saved:1};
     }
     if (request.action === 'equipment.borrow') {
-      const asset = assets.find(row=>row[0] && row[0]===request.code);
+      const asset = assets.find(row=>row[0] && !row[6] && row[0]===request.code);
       if (!asset || !workstationValidDate_(request.due) || request.due<today) throw new Error('Invalid loan');
       const open = records.filter(row=>row[0] && row[5]===request.code)
         .reduce((total,row)=>total+outstanding(row),0);
