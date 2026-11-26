@@ -79,12 +79,16 @@
   feedback('第 '+profile.level+' 層｜已登入工作站。','ledgerSource','success');
   if(views.length) await switchView(views[0]);
   if(profile.actions.includes('brief.read')) {
-   const roles={coach:'教練',assistant:'教練',captain:'隊長',deputy:'副隊長'};
-   $('briefRole').value=roles[profile.role];
-   $('briefRole').disabled=true;
-   const author=$('briefForm').elements.namedItem('author');
-   author.value=profile.name||roles[profile.role];
-   author.readOnly=true;
+   const canPost=profile.actions.includes('brief.write');
+   $('briefForm').hidden=!canPost;
+   if(canPost){
+    const roles={coach:'教練',assistant:'教練',captain:'隊長',deputy:'副隊長'};
+    $('briefRole').value=roles[profile.role];
+    $('briefRole').disabled=true;
+    const author=$('briefForm').elements.namedItem('author');
+    author.value=profile.name||roles[profile.role];
+    author.readOnly=true;
+   }
    await openBrief();
   }
  }
