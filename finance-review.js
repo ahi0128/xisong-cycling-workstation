@@ -171,11 +171,7 @@
   });
  }
  async function publishReviewMonth(month) {
-  const token = $('publishToken').value.trim() || rememberedToken;
-  if (!token) throw new Error('請先設定家長月報發布權杖。');
-  await publishMonth(token,month,undefined,undefined,{fromCloud:true});
-  rememberToken(token);
-  $('publishToken').value='';
+  if (!await publishOfficialMonth(month)) throw new Error('尚未設定月報發布權限。');
   publishedMonths.add(month);
  }
  async function copyResults(results) {
