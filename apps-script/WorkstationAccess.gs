@@ -6,11 +6,11 @@ const EQUIPMENT_ACTIONS = ['equipment.read','equipment.register','equipment.borr
 const WORKSTATION_ACCESS = Object.freeze({
   coach: ['attendance.read', 'attendance.write', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
   assistant: ['attendance.read', 'attendance.write', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
-  secretary: ['attendance.read', 'attendance.write'],
+  secretary: ['attendance.read', 'attendance.write', 'brief.read'],
   captain: BRIEF_ACTIONS,
   deputy: BRIEF_ACTIONS,
-  treasurer: [],
-  manager: EQUIPMENT_ACTIONS
+  treasurer: ['brief.read'],
+  manager: [...EQUIPMENT_ACTIONS, 'brief.read']
 });
 const WORKSTATION_SESSIONS = ['晨操', '下午訓練', '週六團練', '其他'];
 const WORKSTATION_ATTENDANCE = ['', '到課', '缺課', '遲到', '早退', '遲到及早退', '請假'];
@@ -140,7 +140,7 @@ function workstationJson_(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
 }
 
-const BRIEF_ROLES = {coach:'教練',assistant:'教練',captain:'隊長',deputy:'副隊長'};
+const BRIEF_ROLES = {coach:'教練',assistant:'教練',captain:'隊長',deputy:'副隊長',secretary:'文書',treasurer:'總務',manager:'經理'};
 const EQUIPMENT_PREFIXES = Object.freeze({
   '輪組':'WHL','車架':'FRM','休息把套件':'AER','手把':'BAR','坐墊／座管':'SAD',
   '電子功率':'ELC','齒盤傳動':'DRV','踏板':'PDL','安全裝備':'SAF','工具維修':'TLS',
