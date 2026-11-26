@@ -32,11 +32,11 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 .brief-group{border:1px solid #cad7ea;border-radius:8px;padding:.6rem;min-width:0}
 .brief-group h3{margin:.2rem 0}.brief-note{border-top:1px solid #dce4ef;padding:.5rem 0;white-space:pre-wrap;overflow-wrap:anywhere}
 #briefForm textarea{font:inherit;width:min(32rem,100%)}#briefForm .brief-text{display:grid;width:100%}
-#financePermitLabel[hidden]{display:none}
+#financePermitLabel[hidden],#assetForm[hidden],#equipmentForm[hidden]{display:none}
 </style>
 <main>
 <header><p class="site-label">管理工作站</p><h1>西松高中自由車隊｜帳務與賽事管理工作站</h1>
-<div class="header-actions"><button type="button" id="openFinanceReview">帳務送審／審核</button><button type="button" id="roleLogin" class="primary" hidden>使用 Google 帳號登入工作站</button><button type="button" id="loadCloud">教練｜連線正式帳簿</button><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer">開啟正式雲端帳本</a></div>
+<div class="header-actions"><button type="button" id="openFinanceReview" hidden>帳務送審／審核</button><button type="button" id="roleLogin" class="primary" hidden>使用 Google 帳號登入工作站</button><button type="button" id="loadCloud" hidden>教練｜連線正式帳簿</button><a href="https://docs.google.com/spreadsheets/d/1oKpiOXH6U_5lv7bbhmL0_SWyb2ifmWZGt4aAZkL1eA8/edit?usp=drivesdk" target="_blank" rel="noopener noreferrer">開啟正式雲端帳本</a></div>
 <p id="ledgerSource" role="status">幹部請登入工作站。教練可另行連線正式帳簿，授權試算表和雲端硬碟後即可記帳與上傳憑證。</p>
 </header>
 <section id="financeReview" hidden aria-labelledby="financeRole">
@@ -62,14 +62,15 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <div id="days" aria-label="月曆"></div><p id="totals"></p><details id="annualTotals" hidden><summary>查看年度合計</summary><p id="annual"></p></details>
 </section>
 <section><h2 id="entryTitle">新增收支</h2>
-<p>新增收支會寫入正式雲端帳簿。首次儲存時請選擇有帳簿編輯權限的 Google 帳號。此分頁已設定發布權杖時，儲存也會更新家長月報（含用途與備註）。</p><script src="https://accounts.google.com/gsi/client" async></script>
+<p>新增收支會寫入正式雲端帳簿。首次儲存時請選擇有帳簿編輯權限的 Google 帳號。此分頁已設定發布權杖時，儲存也會更新家長月報（含用途與公開備註）。</p><script src="https://accounts.google.com/gsi/client" async></script>
 
 <form id="entry">
 <label>日期<input id="date" type="date" required></label>
 <label>類型<select id="kind"><option value="income">收入</option><option value="expense">支出</option></select></label>
 <label>品名／摘要<input id="title" required maxlength="180"></label>
 <label>金額（元）<input id="amount" type="number" min="0.01" max="100000000" step="0.01" required></label>
-<label>備註<input id="note" maxlength="400"></label>
+<label>內部備註<input id="note" maxlength="400"></label>
+<label>公開備註（選填，家長可見）<input id="publicNote" maxlength="400"></label>
 <div class="receipt-fields">
 <label>拍照或選擇憑證（JPG、PNG、PDF，正式登記最多 5 MB）<input id="receipt" type="file" accept="image/jpeg,image/png,application/pdf"></label>
 <details id="receiptOptions"><summary>使用已上傳的憑證連結（選填）</summary>
@@ -167,7 +168,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <section id="equipment" hidden>
 <h2>器材借用</h2>
 <details><summary>新增器材</summary>
-<form id="assetForm">
+<p id="equipmentLoginRequired" hidden>請用上方「使用 Google 帳號登入工作站」登記器材、借出或歸還。</p><form id="assetForm" hidden>
 <p>依類別自動編號。你可以在儲存前調整類別。</p>
 <label>品名<input name="title" maxlength="100" required></label>
 <label>類別<select name="category"></select></label>
@@ -175,7 +176,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <label>存放位置（選填）<input name="location" maxlength="100"></label>
 <button class="primary">儲存器材</button>
 </form></details>
-<form id="equipmentForm">
+<form id="equipmentForm" hidden>
 <label>器材／編號<select id="equipmentItem" required><option value="">選擇器材</option></select></label>
 <label>借用人<input id="equipmentBorrower" required maxlength="60"></label>
 <label>數量<input id="equipmentQuantity" type="number" min="1" step="1" value="1" required></label><label>預計歸還日<input id="equipmentDue" type="date" required></label><button class="primary">登記借出</button>
@@ -308,7 +309,7 @@ function render(){
   const item=document.createElement('div');item.className='row';
   const label=document.createElement('strong');
   label.textContent=(row.kind==='income'?'收入':'支出')+' ｜ '+row.title+' ｜ '+money(row.amount);
-  item.append(label,document.createTextNode(row.note||''));
+  item.append(label,document.createTextNode([row.note, row.publicNote&&'公開備註：'+row.publicNote].filter(Boolean).join(' ｜ ')));
   item.classList.add(row.kind==='income'?'ledger-income':'ledger-expense');
   if(!showingLocalLedger){
    if(row.receiptLink){
@@ -321,7 +322,7 @@ function render(){
     item.append(document.createTextNode(' '),button('編輯',()=>{
      reset(row.date);
      editing={...row,cloud:true};
-     for(const key of ['kind','title','note','receiptLink'])$(key).value=row[key];
+     for(const key of ['kind','title','note','publicNote','receiptLink'])$(key).value=row[key]||'';
      $('receiptOptions').open=Boolean(row.receiptLink);
      $('amount').value=row.amount/100;
      $('date').readOnly=true;
@@ -334,7 +335,7 @@ function render(){
   }
   item.append(button('編輯',()=>{
    reset(row.date);editing=row;
-   for(const key of ['kind','title','note'])$(key).value=row[key];
+   for(const key of ['kind','title','note','publicNote'])$(key).value=row[key]||'';
    $('amount').value=row.amount/100;
    $('entryTitle').textContent='編輯收支';
    $('cancel').hidden=false;$('title').focus();
@@ -493,6 +494,10 @@ function renderEquipmentStock(){
  }
 }
 async function refreshEquipment(){
+ const canWrite=Boolean(window.workstationRole?.active());
+ $('assetForm').hidden=!canWrite;
+ $('equipmentForm').hidden=!canWrite;
+ $('equipmentLoginRequired').hidden=canWrite;
  const {records,assets}=await equipmentSnapshot();
  equipmentAssets=assets;
  const selector=$('equipmentItem'), previous=selector.value;
@@ -526,7 +531,7 @@ async function refreshEquipment(){
     ' ｜ 未還 '+record.left+'/'+record.qty+(record.back?' ｜ 最近歸還 '+equipmentTime(record.back):'')+
     (record.code&&!known.has(record.code)?' ｜ 編號待核對':'')+(record.note?' ｜ '+record.note:'')));
    line.append(info);
-   if(!returned)line.append(button('登記歸還',()=>{
+   if(!returned&&window.workstationRole?.active())line.append(button('登記歸還',()=>{
     const answer=prompt('請輸入本次歸還數量',String(record.left));
     if(answer===null)return;
     const count=Number(answer);
@@ -600,6 +605,7 @@ assetTitle.addEventListener('input',()=>{
 assetCategory.addEventListener('change',()=>{manualAssetCategory=true});
 assetForm.onsubmit=event=>{
  event.preventDefault();
+ if(!window.workstationRole?.active())return;
  const fields=new FormData(assetForm);
  const name=fields.get('title').trim(),category=fields.get('category');
  let code;
@@ -644,6 +650,7 @@ async function runEquipment(action,message){
 $('equipmentRefresh').onclick=()=>runEquipment(refreshEquipment);
 $('equipmentForm').onsubmit=event=>{
  event.preventDefault();
+ if(!window.workstationRole?.active())return;
  const form=event.currentTarget;
  const code=$('equipmentItem').value,borrower=$('equipmentBorrower').value.trim();
  const qty=Number($('equipmentQuantity').value),due=$('equipmentDue').value;
@@ -999,7 +1006,7 @@ async function syncAuto(session){
 
 function publicDetailsFor(month){
  return cleanPublicDetails(state.rows.filter(row=>row.date.startsWith(month+'-'))
-  .map(row=>({date:row.date,kind:row.kind,category:row.title,amount:row.amount/100,note:row.note})),month)
+  .map(row=>({date:row.date,kind:row.kind,category:row.title,amount:row.amount/100,note:row.publicNote||''})),month)
   .sort((a,b)=>a.date.localeCompare(b.date));
 }
 function renderPublicDetails(month){
@@ -1361,7 +1368,7 @@ function parseCloudRows([header,...rows]){
    const date=year?year+'-'+mm.padStart(2,'0')+'-'+dd.padStart(2,'0'):'';
    const title=row[1]?.trim(),credit=toCloudCents(row[2]),debit=toCloudCents(row[3]);
    if(!validDate(date)||!title||Boolean(credit)===Boolean(debit))throw new Error('請填日期、用途，以及單筆的收入或支出。');
-   return {date,kind:credit?'income':'expense',title,amount:credit||debit,note:row[4]||'',receiptLink:/^https:\/\//i.test(row[5]||'')?row[5]:'',id:row[6]||''};
+   return {date,kind:credit?'income':'expense',title,amount:credit||debit,note:row[4]||'',publicNote:header[7]?.trim()==='公開備註'?(row[7]||''):'',receiptLink:/^https:\/\//i.test(row[5]||'')?row[5]:'',id:row[6]||''};
   }catch(error){throw new Error('第 '+(i+2)+' 列：'+error.message)}
  });
 }
@@ -1373,7 +1380,7 @@ function buildCloudMonth(rows,month,opening){
   if(!row.date.startsWith(month+'-'))continue;
   if(row.kind==='income')income+=row.amount;
   else expense+=row.amount;
-  details.push({date:row.date,kind:row.kind,category:row.title,amount:row.amount/100,note:row.note});
+  details.push({date:row.date,kind:row.kind,category:row.title,amount:row.amount/100,note:row.publicNote||''});
  }
  details.sort((a,b)=>a.date.localeCompare(b.date));
  return {values:{opening,income,expense,closing:opening+income-expense},details};
@@ -1487,7 +1494,7 @@ briefForm.onsubmit=event=>{
 
 async function loadCloudLedger({signIn=false}={}){
  await authorizeSheets(signIn,false);
- const ranges=["'收支明細'!A1:G","'月結'!B2"].map(range=>'ranges='+encodeURIComponent(range)).join('&');
+ const ranges=["'收支明細'!A1:H","'月結'!B2"].map(range=>'ranges='+encodeURIComponent(range)).join('&');
  const data=await sheetsRequest('/values:batchGet?'+ranges);
  const [entries,balance]=data.valueRanges;
  cloudLedger={rows:parseCloudRows(entries.values??[]),opening:toCloudCents(balance.values?.[0]?.[0],true)};
@@ -1495,6 +1502,7 @@ async function loadCloudLedger({signIn=false}={}){
  $('viewLocal').setAttribute('aria-pressed','false');
  $('loadCloud').textContent='重新整理正式帳簿';
  $('loadCloud').classList.remove('primary');
+ $('loadCloud').hidden=false;
  $('workstationNav').hidden=false;
  $('ledger').hidden=activeView!=='ledger';
  feedback('目前顯示正式雲端帳簿。','ledgerSource','success');
@@ -1513,7 +1521,7 @@ async function deleteCloudEntry(row,control){
   if(values[0]?.[0]!=='登記識別碼'||matches.length!==1)
    throw new Error('找不到唯一的紀錄，請重新載入正式帳簿。');
   const line=matches[0];
-  await sheetsRequest('/values/'+encodeURIComponent("'收支明細'!A"+line+":G"+line)+':clear',{method:'POST',body:'{}'});
+  await sheetsRequest('/values/'+encodeURIComponent("'收支明細'!A"+line+":H"+line)+':clear',{method:'POST',body:'{}'});
   removed=true;
   const ledger=await loadCloudLedger();
   const token=$('publishToken').value.trim()||rememberedToken;
@@ -1562,10 +1570,11 @@ async function writeCloudEntry(row,file,original){
  const key=JSON.stringify([row,original?.id,file&&[file.name,file.size,file.lastModified]]);
  if(pendingCloudEntry?.key!==key)pendingCloudEntry={key,id:crypto.randomUUID()};
  const id=original?.id||pendingCloudEntry.id;
- const {values=[]}=await sheetsRequest('/values/'+encodeURIComponent("'收支明細'!A1:G"));
+ const {values=[]}=await sheetsRequest('/values/'+encodeURIComponent("'收支明細'!A1:H"));
  const headers=['日期','用途','收入（元）','支出（元）','備註','憑證連結'];
  if(headers.some((label,i)=>values[0]?.[i]!==label)||
     (values[0][6]&&values[0][6]!=='登記識別碼')||
+    (values[0][7]?values[0][7]!=='公開備註':values.slice(1).some(line=>line[7]))||
     (!values[0][6]&&values.slice(1).some(line=>line[6])))
   throw new Error('正式帳簿欄位已變更，請聯絡管理者。');
  const matches=values.flatMap((line,index)=>index&&line[6]===id?[index]:[]);
@@ -1573,7 +1582,7 @@ async function writeCloudEntry(row,file,original){
  if(original){
   if(matches.length!==1)throw new Error('紀錄已被刪除或無法辨識，請重新載入正式帳簿。');
   const [current]=parseCloudRows([values[0],values[matches[0]]]);
-  const fields=['date','kind','title','amount','note','receiptLink'];
+  const fields=['date','kind','title','amount','note','publicNote','receiptLink'];
   if(!current||fields.some(field=>current[field]!==original[field]))
    throw new Error('這筆紀錄已被更新，請重新載入後再編輯。');
  }
@@ -1586,9 +1595,11 @@ async function writeCloudEntry(row,file,original){
  const requests=[];
  if(!values[0][6])requests.push({updateCells:{start:{sheetId,rowIndex:0,columnIndex:6},
   rows:[{values:[string('登記識別碼')]}],fields:'userEnteredValue'}});
+ if(!values[0][7])requests.push({updateCells:{start:{sheetId,rowIndex:0,columnIndex:7},
+  rows:[{values:[string('公開備註')]}],fields:'userEnteredValue'}});
  const entry={sheetId,rows:[{values:[
   date,string(row.title),row.kind==='income'?number(row.amount/100):{},
-  row.kind==='expense'?number(row.amount/100):{},string(row.note),string(receiptLink),string(id)
+  row.kind==='expense'?number(row.amount/100):{},string(row.note),string(receiptLink),string(id),string(row.publicNote)
  ]}],fields:'userEnteredValue,userEnteredFormat.numberFormat'};
  if(original){
   const {sheetId,...cells}=entry;
@@ -1642,7 +1653,7 @@ async function init(){
    if(file&&receiptLink&&receiptLink!==original?.receiptLink)throw new Error('請擇一使用憑證檔案或雲端連結。');
    if(receiptLink&&!/^https:\/\//i.test(receiptLink))throw new Error('請輸入 HTTPS 憑證連結。');
    feedback('正在寫入正式帳簿…');
-   await writeCloudEntry({date,kind:$('kind').value,title:$('title').value.trim(),amount,note:$('note').value,receiptLink},file,original);
+   await writeCloudEntry({date,kind:$('kind').value,title:$('title').value.trim(),amount,note:$('note').value,publicNote:$('publicNote').value,receiptLink},file,original);
    pendingCloudEntry=undefined;
    $('receiptLink').value='';
    reset(date);
@@ -1666,7 +1677,7 @@ async function init(){
   if(file&&(!media.has(file.type)||file.size>sizeLimit))throw new Error('請選擇 8 MB 以下的 JPG、PNG 或 PDF。');
   const row={
    id:editing?.id||crypto.randomUUID(),date,kind:$('kind').value,title:$('title').value.trim(),
-   amount:Math.round(Number($('amount').value)*100),note:$('note').value,
+   amount:Math.round(Number($('amount').value)*100),note:$('note').value,publicNote:$('publicNote').value,
    receipt:file?await readReceipt(file):editing?.receipt||null,
    receiptName:file?.name||editing?.receiptName||null
   };
@@ -1736,7 +1747,7 @@ async function init(){
   try{
    const ledger=await loadCloudLedger();
    const {values,details}=buildCloudMonth(ledger.rows,month,ledger.opening);
-   if(!confirm('發布 '+month+' 月報？\n'+describe(values)+'\n共 '+details.length+' 筆收支，包含用途及備註。'))return;
+   if(!confirm('發布 '+month+' 月報？\n'+describe(values)+'\n共 '+details.length+' 筆收支。用途會公開，內部備註不會公開。'+(details.some(row=>row.note)?'\n公開備註預覽：\n'+details.filter(row=>row.note).map(row=>row.category+' ｜ '+row.note).join('\n'):'')))return;
    rememberToken(token);$('publishToken').value='';$('tokenField').hidden=true;
    feedback('發布中…','publishStatus');
    await publishMonth(token,month,values,details,{fromCloud:true});
@@ -1757,6 +1768,6 @@ async function init(){
 }
 init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。','status','error'));
 </script>
-<script src="finance-review.js"></script>
-<script src="workstation-role.js"></script>
+<script src="finance-review.js?v=public-notes"></script>
+<script src="workstation-role.js?v=role-entry"></script>
 </html>
