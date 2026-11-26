@@ -33,6 +33,7 @@
    throw new Error({
     forbidden:'此 Google 帳號沒有這項工作站權限。',
     sign_in_required:'登入已失效，請重新登入。',
+    equipment_on_loan:'這項器材仍有未歸還的借用，請先登記歸還。',
     equipment_conflict:'紀錄已被更新，請關閉視窗並重新整理後再編輯。',
     equipment_quantity:'數量與庫存、已借出或已歸還數量不符。',
     equipment_due:'預計歸還日不能早於借出日。',
