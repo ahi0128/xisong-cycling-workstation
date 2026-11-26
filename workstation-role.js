@@ -6,7 +6,8 @@
  if (endpoint.origin !== 'https://script.google.com' || !endpoint.pathname.endsWith('/exec')) return;
  const redirect = location.origin + location.pathname;
  const storageKey = 'xisong-role-signin';
- let session;
+ let session, coachRole=false;
+ const publicViews=['team','domestic','international'];
  const encode = bytes => btoa(String.fromCharCode(...new Uint8Array(bytes)))
   .replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
  const random = () => encode(crypto.getRandomValues(new Uint8Array(32)));
@@ -21,7 +22,10 @@
   if (result.error) {
    if (result.error==='sign_in_required') {
     session=undefined;
-    for(const id of ['attendance','equipment','workstationNav','openFinanceReview','loadCloud']) $(id).hidden=true;
+    coachRole=false;
+    for(const id of ['attendance','equipment','ledger','dues','contacts','openBrief','openFinanceReview','loadCloud']) $(id).hidden=true;
+    for(const button of document.querySelectorAll('#workstationNav [data-view]'))button.hidden=!publicViews.includes(button.dataset.view);
+    $('racePublishSettings').hidden=true;
     if($('briefDialog').open) $('briefDialog').close();
     $('roleLogin').hidden=false;
    }
@@ -68,9 +72,10 @@
   control.hidden=true;
   const views = ['attendance','equipment'].filter(view=>profile.actions.includes(view+'.read'));
   const isCoach = profile.level === 3;
+  coachRole=isCoach;
   $('openFinanceReview').hidden=!(isCoach||profile.role==='treasurer');
   for(const button of document.querySelectorAll('#workstationNav [data-view]')) {
-   button.hidden=!isCoach && !views.includes(button.dataset.view);
+   button.hidden=!isCoach && !views.includes(button.dataset.view) && !publicViews.includes(button.dataset.view);
   }
   $('loadCloud').hidden=!isCoach;
   if(isCoach) $('loadCloud').textContent='連線正式帳簿';
@@ -93,7 +98,7 @@
   }
  }
  const restoreQuery = location.search;
- window.workstationRole = {active:()=>Boolean(session), request};
+ window.workstationRole = {active:()=>Boolean(session), isCoach:()=>coachRole, request};
  window.workstationAttendance = {
   active:()=>Boolean(session),
   read:(date,period)=>request('attendance.read',{date,period}),
