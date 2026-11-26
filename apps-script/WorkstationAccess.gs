@@ -1,14 +1,16 @@
 // Script properties: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI,
 // WORKSTATION_BOOK_ID, WORKSTATION_ROLES (JSON object mapping Google email to role).
 // Configure privately in Apps Script. Never put these values in the Pages frontend.
+const BRIEF_ACTIONS = ['brief.read','brief.write'];
+const EQUIPMENT_ACTIONS = ['equipment.read','equipment.register','equipment.borrow','equipment.return'];
 const WORKSTATION_ACCESS = Object.freeze({
-  coach: ['attendance.read', 'attendance.write'],
-  assistant: ['attendance.read', 'attendance.write'],
+  coach: ['attendance.read', 'attendance.write', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
+  assistant: ['attendance.read', 'attendance.write', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
   secretary: ['attendance.read', 'attendance.write'],
-  captain: [],
-  deputy: [],
+  captain: BRIEF_ACTIONS,
+  deputy: BRIEF_ACTIONS,
   treasurer: [],
-  manager: []
+  manager: EQUIPMENT_ACTIONS
 });
 const WORKSTATION_SESSIONS = ['晨操', '下午訓練', '週六團練', '其他'];
 const WORKSTATION_ATTENDANCE = ['', '到課', '缺課', '遲到', '早退', '遲到及早退', '請假'];
@@ -35,6 +37,7 @@ function doPost(event) {
     if (!profile) return workstationJson_({error:'forbidden'});
     if (request.action === 'profile') return workstationJson_({profile});
     if (!profile.actions.includes(request.action)) return workstationJson_({error:'forbidden'});
+    if (!request.action.startsWith('attendance.')) return workstationJson_(workstationFeature_(request, profile, props));
     if (!workstationValidDate_(request.date) || !WORKSTATION_SESSIONS.includes(request.period))
       return workstationJson_({error:'invalid_period'});
     const book = SpreadsheetApp.openById(props.getProperty('WORKSTATION_BOOK_ID'));
@@ -86,9 +89,10 @@ function workstationProfile_(email, props) {
   const roles = JSON.parse(props.getProperty('WORKSTATION_ROLES') || '{}');
   const address = String(email || '').toLowerCase();
   if (!Object.prototype.hasOwnProperty.call(roles, address)) return null;
-  const role = roles[address];
+  const account = roles[address];
+  const role = typeof account === 'string' ? account : account?.role;
   if (!Object.prototype.hasOwnProperty.call(WORKSTATION_ACCESS, role)) return null;
-  return {role, level: role === 'coach' || role === 'assistant' ? 3 : 2, actions: WORKSTATION_ACCESS[role]};
+  return {role, name:typeof account?.name==='string'?account.name:'', level: role === 'coach' || role === 'assistant' ? 3 : 2, actions: WORKSTATION_ACCESS[role]};
 }
 
 function workstationExchange_(request, props) {
@@ -134,4 +138,114 @@ function workstationValidDate_(date) {
 
 function workstationJson_(payload) {
   return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
+}
+
+const BRIEF_ROLES = {coach:'教練',assistant:'教練',captain:'隊長',deputy:'副隊長'};
+const EQUIPMENT_PREFIXES = Object.freeze({
+  '輪組':'WHL','車架':'FRM','休息把套件':'AER','手把':'BAR','坐墊／座管':'SAD',
+  '電子功率':'ELC','齒盤傳動':'DRV','踏板':'PDL','安全裝備':'SAF','工具維修':'TLS',
+  '訓練設備':'TRN','運輸收納':'STO','其他':'OTH'
+});
+const BRIEF_KINDS = ['待辦事項','請假登記','訓練提醒','其他交接'];
+
+function workstationFeature_(request, profile, props) {
+  const book = SpreadsheetApp.openById(props.getProperty('WORKSTATION_BOOK_ID'));
+  const today = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+  if (request.action.startsWith('brief.')) {
+    const role = BRIEF_ROLES[profile.role];
+    const manager = profile.level === 3;
+    const sheet = workstationSheet_(book,'今日交接',['日期','職務欄','類型','通知對象','留言人','事項','登錄時間']);
+    if (request.action === 'brief.read') {
+      const rows = sheet.getDataRange().getDisplayValues().slice(1).filter(row =>
+        row[0] === today && (manager || row[1] === role || row[3] === '全體' || row[3] === role));
+      return {rows};
+    }
+    const author = profile.name || role;
+    const body = workstationText_(request.body,500);
+    const audience = request.audience;
+    if (!BRIEF_KINDS.includes(request.kind) ||
+        !['全體','教練','隊長','副隊長','文書','總務','經理'].includes(audience)) throw new Error('Invalid brief');
+    return workstationLocked_(() => {
+      workstationAppend_(sheet,[today,role,request.kind,audience,author,body,new Date().toISOString()]);
+      return {saved:1};
+    });
+  }
+  const stock = workstationSheet_(book,'器材清單',['物品編號','品名','類別','總數量','存放位置','備註']);
+  const loans = workstationSheet_(book,'器材借用',['登記識別碼']);
+  const readStock = () => stock.getDataRange().getDisplayValues().map(row=>row.slice(0,6));
+  const readLoans = () => loans.getDataRange().getDisplayValues().map(row=>row.slice(0,10));
+  if (request.action === 'equipment.read') return {assets:readStock(), loans:readLoans()};
+  return workstationLocked_(() => {
+    const assets = readStock().slice(1);
+    const qty = request.quantity;
+    if (!Number.isSafeInteger(qty) || qty < 1) throw new Error('Invalid quantity');
+    if (request.action === 'equipment.register') {
+      const category = request.category;
+      if (!Object.prototype.hasOwnProperty.call(EQUIPMENT_PREFIXES,category)) throw new Error('Invalid category');
+      const prefix = EQUIPMENT_PREFIXES[category];
+      let last = 0;
+      for (const [id,,group] of assets) {
+        const code = String(id).normalize('NFKC').trim().toUpperCase();
+        if (group !== category && !code.startsWith(prefix+'-')) continue;
+        const suffix = Number(code.match(/-(\d+)$/)?.[1]);
+        if (Number.isSafeInteger(suffix)) last = Math.max(last,suffix);
+      }
+      if (!Number.isSafeInteger(last+1)) throw new Error('Equipment limit');
+      const code = prefix+'-'+String(last+1).padStart(3,'0');
+      workstationAppend_(stock,[code,workstationText_(request.name,180),category,qty,
+        workstationText_(request.location,180,true),'']);
+      return {saved:1,code};
+    }
+    const records = readLoans().slice(1);
+    const received = row => row[8] !== '' && row[8] !== undefined ? Number(row[8]) : row[4] ? Number(row[7]||1) : 0;
+    const outstanding = row => Math.max(0,Number(row[7]||1)-received(row));
+    if (request.action === 'equipment.borrow') {
+      const asset = assets.find(row=>row[0] && row[0]===request.code);
+      if (!asset || !workstationValidDate_(request.due) || request.due<today) throw new Error('Invalid loan');
+      const open = records.filter(row=>row[0] && row[5]===request.code)
+        .reduce((total,row)=>total+outstanding(row),0);
+      if (!(qty<=Number(asset[3])-open)) throw new Error('Insufficient inventory');
+      workstationAppend_(loans,[Utilities.getUuid(),asset[1],workstationText_(request.borrower,120),
+        new Date().toISOString(),'',asset[0],request.due,qty,0,'']);
+      return {saved:1};
+    }
+    const index = records.findIndex(row=>row[0] && row[0]===request.id);
+    if (index<0 || !(qty<=outstanding(records[index]))) throw new Error('Invalid return');
+    const row = index+2;
+    // Both updated values are in one row write, preserving the other existing fields.
+    const range = loans.getRange(row,5,1,5);
+    const values = range.getValues()[0];
+    values[0] = new Date().toISOString();
+    values[4] = received(records[index])+qty;
+    range.setValues([values.map(workstationLiteral_)]);
+    return {saved:1};
+  });
+}
+
+function workstationText_(value,max,optional=false) {
+  if (typeof value !== 'string' || value.trim().length > max || (!optional && !value.trim()))
+    throw new Error('Invalid text');
+  return value.trim();
+}
+
+function workstationLiteral_(value) {
+  return typeof value === 'string' && /^[=']/.test(value) ? "'"+value : value;
+}
+
+function workstationAppend_(sheet,row) {
+  const next=sheet.getLastRow()+1;
+  if (next>sheet.getMaxRows()) sheet.insertRowsAfter(sheet.getMaxRows(),1);
+  sheet.getRange(next,1,1,row.length).setNumberFormat('@').setValues([row.map(workstationLiteral_)]);
+}
+
+function workstationLocked_(callback) {
+  const lock=LockService.getScriptLock();
+  if (!lock.tryLock(5000)) return {error:'busy'};
+  try {
+    const result=callback();
+    SpreadsheetApp.flush();
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
 }
