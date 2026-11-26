@@ -1219,6 +1219,22 @@ async function publishMonth(token,month,values,details,{fromCloud=false}={}){
   return update.commit.sha;
  }
 }
+function canPublishFromWorkstation(){
+ return Boolean(window.workstationRole?.can('report.publish'));
+}
+async function publishOfficialMonth(month, values, details){
+ if(canPublishFromWorkstation()){
+  const result=await window.workstationRole.request('report.publish',{month});
+  if(!result.published?.includes(month))throw new Error('家長月報待發布。');
+  return true;
+ }
+ const token=$('publishToken').value.trim()||rememberedToken;
+ if(!token)return false;
+ await publishMonth(token,month,values,details,{fromCloud:true});
+ rememberToken(token);
+ $('publishToken').value='';
+ return true;
+}
 const monthlyDues=250000;
 const duesHeaders=['繳費月份','姓名／代號','應繳金額','實繳金額','繳費日期','繳費狀態','備註'];
 async function readDuesPayments(){
@@ -1283,9 +1299,8 @@ async function recordDuesPayment(item){
   cloudDuesPayments=await readDuesPayments();
   renderDues();
   await loadCloudLedger();
-  const token=$('publishToken').value.trim()||rememberedToken;
-  if(token)await publishMonth(token,receiptMonth,undefined,undefined,{fromCloud:true});
-  feedback(token?'雲端繳納清單、收支帳簿及家長月報已更新。':'雲端繳納清單與收支帳簿已更新，家長月報待發布。','duesStatus',token?'success':'error');
+  const published=await publishOfficialMonth(receiptMonth);
+  feedback(published?'雲端繳納清單、收支帳簿及家長月報已更新。':'雲端繳納清單與收支帳簿已更新，家長月報待發布。','duesStatus',published?'success':'error');
  }catch(error){
   try{cloudDuesPayments=await readDuesPayments();renderDues()}catch{}
   feedback((written?'已入帳，後續同步未完成：':'未確認寫入：')+error.message,'duesStatus','error');
@@ -1644,12 +1659,9 @@ async function deleteCloudEntry(row,control){
   await sheetsRequest('/values/'+encodeURIComponent("'收支明細'!A"+line+":H"+line)+':clear',{method:'POST',body:'{}'});
   removed=true;
   const ledger=await loadCloudLedger();
-  const token=$('publishToken').value.trim()||rememberedToken;
-  if(!token){feedback('已刪除正式帳簿紀錄。家長月報待發布。','status','error');return}
   const month=row.date.slice(0,7);
   const {values:totals,details}=buildCloudMonth(ledger.rows,month,ledger.opening);
-  await publishMonth(token,month,totals,details,{fromCloud:true});
-  rememberToken(token);$('publishToken').value='';
+  if(!await publishOfficialMonth(month,totals,details)){feedback('已刪除正式帳簿紀錄。家長月報待發布。','status','error');return}
   feedback('已刪除正式帳簿紀錄並提交更新後的家長月報。','status','success');
  }catch(error){
   feedback((removed?'已刪除正式帳簿紀錄，明細或家長月報待更新：':'刪除未確認，請先重新載入帳簿：')+error.message,'status','error');
@@ -1782,14 +1794,11 @@ async function init(){
     render();feedback('明細尚未更新，請點上方按鈕重新載入正式帳簿。','ledgerSource','error');
     feedback('已存入正式帳簿。明細與月報待更新：'+error.message,'status','error');return;
    }
-   const token=$('publishToken').value.trim()||rememberedToken;
-   if(!token){feedback('已存入正式帳簿。設定發布權杖後可更新家長月報。','status','error');return}
    const month=date.slice(0,7);
    const {values,details}=buildCloudMonth(ledger.rows,month,ledger.opening);
    try{
     feedback('已入帳，正在發布家長月報…');
-    await publishMonth(token,month,values,details,{fromCloud:true});
-    rememberToken(token);$('publishToken').value='';
+    if(!await publishOfficialMonth(month,values,details)){feedback('已存入正式帳簿。家長月報待發布。','status','error');return}
     feedback('已存入正式帳簿並提交家長月報，家長頁會在部署後更新。','status','success');
    }catch(error){feedback('已存入正式帳簿。家長月報待發布：'+error.message,'status','error');}
    return;
@@ -1861,7 +1870,7 @@ async function init(){
   if(button.disabled)return;
   if(!$('year').checkValidity()){feedback('請檢查所選月份。','publishStatus','error');return}
   const token=$('publishToken').value.trim()||rememberedToken;
-  if(!token){$('tokenField').hidden=false;$('publishToken').focus();feedback('請貼上權杖，再按 Enter 發布。','publishStatus','error');return}
+  if(!token&&!canPublishFromWorkstation()){$('tokenField').hidden=false;$('publishToken').focus();feedback('請貼上權杖，再按 Enter 發布。','publishStatus','error');return}
   const month=monthKey();
   button.disabled=true;
   try{
@@ -1888,6 +1897,6 @@ async function init(){
 }
 init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。','status','error'));
 </script>
-<script src="finance-review.js?v=public-notes"></script>
+<script src="finance-review.js?v=server-report"></script>
 <script src="workstation-role.js?v=equipment-remove"></script>
 </html>
