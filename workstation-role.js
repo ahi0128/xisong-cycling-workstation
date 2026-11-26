@@ -21,7 +21,8 @@
   if (result.error) {
    if (result.error==='sign_in_required') {
     session=undefined;
-    $('attendance').hidden=true;
+    for(const id of ['attendance','equipment','workstationNav']) $(id).hidden=true;
+    if($('briefDialog').open) $('briefDialog').close();
     $('roleLogin').hidden=false;
    }
    throw new Error({
@@ -61,13 +62,28 @@
    throw new Error('登入驗證已失效，請重新登入。');
   if (!callback.get('code')) throw new Error('Google 登入未完成。');
   const result = await request('login',{code:callback.get('code'),verifier:previous.verifier});
-  if (!result.profile?.actions.includes('attendance.read')) throw new Error('此帳號目前沒有差勤權限。');
+  const profile = result.profile;
+  if (!profile?.actions.length) throw new Error('此帳號的工作站功能尚未開通。');
   session=result.session;
   control.hidden=true;
-  feedback('已登入差勤。','ledgerSource','success');
-  await switchView('attendance');
+  const views = ['attendance','equipment'].filter(view=>profile.actions.includes(view+'.read'));
+  for(const button of document.querySelectorAll('#workstationNav [data-view]')) button.hidden=!views.includes(button.dataset.view);
+  $('openBrief').hidden=!profile.actions.includes('brief.read');
+  $('workstationNav').hidden=false;
+  feedback('第 '+profile.level+' 層｜已登入工作站。','ledgerSource','success');
+  if(views.length) await switchView(views[0]);
+  if(profile.actions.includes('brief.read')) {
+   const roles={coach:'教練',assistant:'教練',captain:'隊長',deputy:'副隊長'};
+   $('briefRole').value=roles[profile.role];
+   $('briefRole').disabled=true;
+   const author=$('briefForm').elements.namedItem('author');
+   author.value=profile.name||roles[profile.role];
+   author.readOnly=true;
+   await openBrief();
+  }
  }
  const restoreQuery = location.search;
+ window.workstationRole = {active:()=>Boolean(session), request};
  window.workstationAttendance = {
   active:()=>Boolean(session),
   read:(date,period)=>request('attendance.read',{date,period}),
