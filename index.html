@@ -55,7 +55,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <p id="financeReviewStatus" role="status"></p>
 <div id="financeItems"></div>
 </section>
-<nav id="workstationNav" aria-label="工作站功能" hidden><button data-view="ledger" aria-pressed="true">收支帳本</button> <button data-view="dues" aria-pressed="false">隊費繳納</button> <button data-view="contacts" aria-pressed="false">通訊錄</button> <button data-view="attendance" aria-pressed="false">差勤</button> <button data-view="equipment" aria-pressed="false">器材借用</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a> <button id="openBrief" type="button">今日交接</button></nav>
+<nav id="workstationNav" aria-label="工作站功能"><button data-view="ledger" hidden aria-pressed="true">收支帳本</button> <button data-view="dues" hidden aria-pressed="false">隊費繳納</button> <button data-view="contacts" hidden aria-pressed="false">通訊錄</button> <button data-view="attendance" hidden aria-pressed="false">差勤</button> <button data-view="equipment" hidden aria-pressed="false">器材借用</button> <button data-view="team" aria-pressed="false">車隊參賽</button> <button data-view="domestic" aria-pressed="false">國內賽事</button> <button data-view="international" aria-pressed="false">國際賽事</button> <a href="https://ahi0128.github.io/xisong-cycling-parent/#monthly-reports">家長月報</a> <button id="openBrief" type="button" hidden>今日交接</button></nav>
 <div id="ledger" hidden>
 <section>
 <h2>選擇日期</h2><label>年份<input id="year" type="number" min="1900" max="9999" required></label><label>月份<select id="month"></select></label>
@@ -905,9 +905,10 @@ async function switchView(view){
  if(view==='ledger')return;
  const [title,path]=raceViews[view];
  const international=view==='international';
- $('racePublishSettings').hidden=international;
+ const canManageRaces=!international&&(Boolean(cloudLedger)||Boolean(window.workstationRole?.isCoach()));
+ $('racePublishSettings').hidden=!canManageRaces;
  $('teamRaceParentLink').hidden=international;
- if(international)$('raceStatus').hidden=true;
+ if(!canManageRaces)$('raceStatus').hidden=true;
  const panel=$('raceList');
  $('raceTitle').textContent=title;
  panel.textContent='載入中…';
@@ -921,13 +922,13 @@ async function switchView(view){
   if(!upcoming.length){panel.textContent='目前沒有已公告的即將舉行賽事。';return}
   const table=document.createElement('table');
   const head=table.createTHead().insertRow();
-  for(const title of (international?['比賽日期','賽事','地點','直播','官方資訊']:['確認參賽','比賽日期','賽事','地點','報名期限','連結'])){
+  for(const title of (international?['比賽日期','賽事','地點','直播','官方資訊']:[...(canManageRaces?['確認參賽']:[]),'比賽日期','賽事','地點','報名期限','連結'])){
    const th=document.createElement('th');th.scope='col';th.textContent=title;head.append(th);
   }
   const body=table.createTBody();
   for(const event of upcoming){
    const row=body.insertRow();
-   if(!international){
+   if(canManageRaces){
    const checkbox=document.createElement('input');
    checkbox.type='checkbox';
    checkbox.checked=confirmed.has(raceKey(event));
@@ -1504,6 +1505,10 @@ async function loadCloudLedger({signIn=false}={}){
  $('loadCloud').classList.remove('primary');
  $('loadCloud').hidden=false;
  $('workstationNav').hidden=false;
+ if(!window.workstationRole?.active()){
+  for(const control of document.querySelectorAll('#workstationNav [data-view]'))control.hidden=false;
+  $('openBrief').hidden=false;
+ }
  $('ledger').hidden=activeView!=='ledger';
  feedback('目前顯示正式雲端帳簿。','ledgerSource','success');
  render();
@@ -1769,5 +1774,5 @@ async function init(){
 init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。','status','error'));
 </script>
 <script src="finance-review.js?v=public-notes"></script>
-<script src="workstation-role.js?v=role-entry"></script>
+<script src="workstation-role.js?v=public-races"></script>
 </html>
