@@ -223,7 +223,20 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
   </form>
  </details>
 </section>
-<p>通知對象會標在留言上。請假填姓名與時段即可。</p><button id="briefRefresh" type="button">重新整理留言</button>
+<section id="briefLeave" hidden aria-labelledby="briefLeaveTitle">
+<h3 id="briefLeaveTitle">差勤交接</h3>
+<form id="briefLeaveForm" hidden>
+<label>日期<input name="date" type="date" required></label>
+<label>時段<select name="period" required><option>晨操</option><option>下午訓練</option><option>週六團練</option><option>其他</option></select></label>
+<label>類型<select name="kind"><option>請假</option><option>預報遲到</option><option>預報早退</option><option>其他</option></select></label>
+<label>原因（選填，限教練查看）<input name="reason" maxlength="200"></label>
+<button type="submit" class="primary">送出差勤申請</button>
+</form>
+<div id="briefLeaveMine" hidden><h4>我的申請</h4><div id="briefLeaveOwnRows"></div></div>
+<div id="briefLeaveBoard" hidden><h4>隊員差勤交接</h4><label>查看日期<input id="briefLeaveDate" type="date" required></label><div id="briefLeaveBoardRows"></div></div>
+<p id="briefLeaveStatus" role="status"></p>
+</section>
+<p>通知對象會標在留言上。</p><button id="briefRefresh" type="button">重新整理留言</button>
 <div id="briefGroups"></div>
 <form id="briefForm">
 <label>交接欄<select name="role" id="briefRole"></select></label>
@@ -1728,8 +1741,84 @@ function openBrief(){
  $('briefGroups').textContent='正在載入交接留言…';
  $('briefStatus').hidden=true;
  if(!briefDialog.open)briefDialog.showModal();
+ void openBriefLeave();
  return runBrief(async()=>{try{renderBrief(await readBrief())}catch(error){showBriefDuty(null,'無法載入');throw error}});
 }
+
+const briefLeaveForm=$('briefLeaveForm');
+let briefLeaveBusy=false, briefLeaveLoad=0;
+function renderBriefLeaveRows(container,rows,mode){
+ container.replaceChildren();
+ if(!rows.length){container.textContent='沒有申請。';return}
+ for(const row of rows){
+  const item=document.createElement('div');
+  item.className='brief-note';
+  item.append(document.createTextNode([row.date,row.period,row.student,row.kind,row.status].join(' ｜ ')));
+  if(row.reason){
+   const reason=document.createElement('div');reason.textContent='原因：'+row.reason;item.append(reason);
+  }
+  if(row.status==='待確認'){
+   if(mode==='self')item.append(button('撤回',()=>changeBriefLeave('leave.withdraw',{id:row.id})));
+   if(mode==='review')for(const [decision,label] of [['approve','確認'],['reject','退回']]){
+    item.append(button(label,()=>changeBriefLeave('leave.review',{id:row.id,decision})));
+   }
+  }
+  container.append(item);
+ }
+}
+async function refreshBriefLeave(){
+ const role=window.workstationRole;
+ if(!role?.active())return;
+ const load=++briefLeaveLoad;
+ const own=role.can('leave.read'),board=role.can('leave.board');
+ const chosen=$('briefLeaveDate').value;
+ if(board&&!chosen)return;
+ const [mine,team]=await Promise.allSettled([
+  own?role.request('leave.read'):null,
+  board?role.request('leave.board',{date:chosen}):null
+ ]);
+ if(load!==briefLeaveLoad||!role.active())return;
+ if(mine.status==='fulfilled'&&mine.value)renderBriefLeaveRows($('briefLeaveOwnRows'),mine.value.rows,'self');
+ if(team.status==='fulfilled'&&team.value)renderBriefLeaveRows($('briefLeaveBoardRows'),team.value.rows,role.can('leave.review')?'review':'board');
+ for(const [result,id] of [[mine,'briefLeaveOwnRows'],[team,'briefLeaveBoardRows']]){
+  if(result.status==='rejected'){$(id).textContent=result.reason.message;}
+ }
+}
+async function openBriefLeave(){
+ const role=window.workstationRole;
+ const own=role?.can('leave.read'),board=role?.can('leave.board');
+ $('briefLeave').hidden=!(own||board);
+ if(!own&&!board)return;
+ briefLeaveForm.hidden=!own;
+ $('briefLeaveMine').hidden=!own;
+ $('briefLeaveBoard').hidden=!board;
+ const input=briefLeaveForm.elements.namedItem('date');
+ input.min=briefDate;
+ if(!input.value||input.value<briefDate)input.value=briefDate;
+ $('briefLeaveDate').value=briefDate;
+ $('briefLeaveStatus').textContent='';
+ await refreshBriefLeave();
+}
+async function changeBriefLeave(action,fields){
+ if(briefLeaveBusy)return;
+ briefLeaveBusy=true;
+ const submit=briefLeaveForm.querySelector('button');
+ submit.disabled=true;
+ const status=$('briefLeaveStatus');
+ try{
+  await window.workstationRole.request(action,fields);
+  if(action==='leave.submit')briefLeaveForm.elements.namedItem('reason').value='';
+  status.textContent=action==='leave.submit'?'已送出，等待教練確認。':'已更新申請。';
+  await refreshBriefLeave();
+ }catch(error){status.textContent=error.message}
+ finally{briefLeaveBusy=false;submit.disabled=false}
+}
+$('briefLeaveDate').onchange=()=>refreshBriefLeave();
+briefLeaveForm.onsubmit=event=>{
+ event.preventDefault();
+ return changeBriefLeave('leave.submit',Object.fromEntries(new FormData(briefLeaveForm)));
+};
+
 async function saveBriefNote(role,kind,audience,author,body){
  const values=[[briefDate,role,kind,audience,author,body,new Date().toISOString()]];
  const result=window.workstationRole?.active()
@@ -2044,5 +2133,5 @@ async function init(){
 init().catch(()=>feedback('這個瀏覽器無法開啟本機帳本。請確認網站儲存空間可用。','status','error'));
 </script>
 <script src="finance-review.js?v=server-report"></script>
-<script src="workstation-role.js?v=equipment-remove"></script>
+<script src="workstation-role.js?v=brief-leave"></script>
 </html>
