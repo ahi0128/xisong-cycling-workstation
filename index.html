@@ -157,6 +157,7 @@ header button:focus-visible,header a:focus-visible{outline-color:#b8d3ff}
 <label>家長／聯絡人<input name="guardian" maxlength="80"></label>
 <label>家長電話<input name="guardianPhone" type="tel" maxlength="40"></label>
 <label>備註<textarea name="note" maxlength="400"></textarea></label>
+<label>學生 Email<input name="studentEmail" type="email" maxlength="254" autocomplete="off"></label>
 <button class="primary">儲存聯絡資料</button>
 </form>
 </section><section id="attendance" hidden>
@@ -959,13 +960,13 @@ $('attendanceForm').onsubmit=event=>{
  });
 };
 
-const contactHeaders=["姓名","年級","學生電話","家長／聯絡人","家長電話","備註"];
+const contactHeaders=["姓名","年級","學生電話","家長／聯絡人","家長電話","備註","學生 Email"];
 const contactDataRange=range=>'/values/'+encodeURIComponent("'車隊通訊錄'!"+range);
 const contactForm=$('contactEditor'),contactPicker=$('contactStudent');
-const contactFields=['studentPhone','guardian','guardianPhone','note'];
+const contactFields=['studentPhone','guardian','guardianPhone','note','studentEmail'];
 let contactRows=[],contactBusy=false;
 async function readContacts(){
- const {values=[]}=await sheetsRequest(contactDataRange('A1:F'));
+ const {values=[]}=await sheetsRequest(contactDataRange('A1:G'));
  if(contactHeaders.some((name,i)=>values[0]?.[i]!==name))throw new Error('雲端通訊錄欄位不符。');
  return values.slice(1).map((cells,i)=>({cells,row:i+2})).filter(record=>record.cells[0]);
 }
@@ -1007,7 +1008,7 @@ contactForm.onsubmit=event=>{
   if(matches.length!==1)throw new Error('無法確認這位隊員的通訊錄列。');
   const current=matches[0];
   if(values.some((_,i)=>String(current.cells[i+2]??'')!==String(original.cells[i+2]??'')))throw new Error('資料已由其他人更新，請重新開啟通訊錄再核對。');
-  const result=await sheetsRequest(contactDataRange('C'+current.row+':F'+current.row)+'?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[values]})});
+  const result=await sheetsRequest(contactDataRange('C'+current.row+':G'+current.row)+'?valueInputOption=RAW',{method:'PUT',body:JSON.stringify({values:[values]})});
   if(result.updatedRows!==1)throw new Error('未能確認聯絡資料已儲存。');
   current.cells=[...current.cells.slice(0,2),...values];
   contactRows=latest;
