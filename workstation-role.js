@@ -37,6 +37,11 @@
     equipment_conflict:'紀錄已被更新，請關閉視窗並重新整理後再編輯。',
     equipment_quantity:'數量與庫存、已借出或已歸還數量不符。',
     equipment_due:'預計歸還日不能早於借出日。',
+    leave_identity:'帳號尚未對應隊員名冊，請聯繫教練。',
+    leave_duplicate:'同一天同一時段已有申請。',
+    leave_stale:'申請已處理或已撤回，請重新整理。',
+    leave_attendance_conflict:'正式差勤已有紀錄，請先核對。',
+    invalid_period:'請確認日期、時段和申請類型。',
     busy:'資料正在儲存，請稍後重試。'
    }[result.error]||'無法完成這項操作，請重新核對資料。');
   }
