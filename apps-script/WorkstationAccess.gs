@@ -4,6 +4,7 @@
 const BRIEF_ACTIONS = ['brief.read','brief.write'];
 const EQUIPMENT_ACTIONS = ['equipment.read','equipment.register','equipment.borrow','equipment.return','equipment.editAsset','equipment.editLoan','equipment.removeAsset'];
 const WORKSTATION_ACCESS = Object.freeze({
+  member: ['brief.read'],
   coach: ['attendance.read', 'attendance.write', 'report.publish', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
   assistant: ['attendance.read', 'attendance.write', 'report.publish', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
   secretary: ['attendance.read', 'attendance.write', 'brief.read'],
@@ -89,7 +90,19 @@ function doPost(event) {
 function workstationProfile_(email, props) {
   const roles = JSON.parse(props.getProperty('WORKSTATION_ROLES') || '{}');
   const address = String(email || '').toLowerCase();
-  if (!Object.prototype.hasOwnProperty.call(roles, address)) return null;
+  if (!Object.prototype.hasOwnProperty.call(roles, address)) {
+    const book = SpreadsheetApp.openById(props.getProperty('WORKSTATION_BOOK_ID'));
+    const contacts = workstationSheet_(book, '車隊通訊錄',
+      ['姓名','年級','學生電話','家長／聯絡人','家長電話','備註','學生 Email']);
+    const last = contacts.getLastRow();
+    if (last < 2) return null;
+    const rows = contacts.getRange(2, 1, last - 1, 7).getDisplayValues();
+    const matches = rows.filter(row => row[6].trim().toLowerCase() === address);
+    if (matches.length !== 1 || !matches[0][0].trim()) return null;
+    const name = matches[0][0].trim();
+    if (rows.filter(row => row[0].trim() === name).length !== 1) return null;
+    return {role:'member', name, level:1, actions:WORKSTATION_ACCESS.member};
+  }
   const account = roles[address];
   const role = typeof account === 'string' ? account : account?.role;
   if (!Object.prototype.hasOwnProperty.call(WORKSTATION_ACCESS, role)) return null;
@@ -159,7 +172,9 @@ function workstationFeature_(request, profile, props) {
     if (request.action === 'brief.read') {
       const rows = sheet.getDataRange().getDisplayValues().slice(1).filter(row =>
         row[0] === today && (manager || row[1] === role || row[3] === '全體' || row[3] === role));
-      return {rows};
+      return {rows:profile.role === 'member' ? rows.filter(row =>
+        row[1] === '教練' && row[2] === '其他交接' && row[3] === '全體' &&
+        row[5].startsWith('[今日值勤]')) : rows};
     }
     const author = profile.name || role;
     const body = workstationText_(request.body,500);
