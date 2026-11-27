@@ -1,17 +1,19 @@
 // Script properties: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI,
 // WORKSTATION_BOOK_ID, WORKSTATION_ROLES (JSON object mapping Google email to role).
 // Configure privately in Apps Script. Never put these values in the Pages frontend.
+const LEAVE_SELF = ['leave.read','leave.submit','leave.withdraw'];
+const LEAVE_REVIEW = ['leave.board','leave.review'];
 const BRIEF_ACTIONS = ['brief.read','brief.write'];
 const EQUIPMENT_ACTIONS = ['equipment.read','equipment.register','equipment.borrow','equipment.return','equipment.editAsset','equipment.editLoan','equipment.removeAsset'];
 const WORKSTATION_ACCESS = Object.freeze({
-  member: ['brief.read'],
-  coach: ['attendance.read', 'attendance.write', 'report.publish', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
-  assistant: ['attendance.read', 'attendance.write', 'report.publish', ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
-  secretary: ['attendance.read', 'attendance.write', 'brief.read'],
-  captain: BRIEF_ACTIONS,
-  deputy: BRIEF_ACTIONS,
-  treasurer: ['brief.read'],
-  manager: [...EQUIPMENT_ACTIONS, 'brief.read']
+  member: ['brief.read', ...LEAVE_SELF],
+  coach: ['attendance.read', 'attendance.write', 'report.publish', ...LEAVE_REVIEW, ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
+  assistant: ['attendance.read', 'attendance.write', 'report.publish', ...LEAVE_REVIEW, ...BRIEF_ACTIONS, ...EQUIPMENT_ACTIONS],
+  secretary: ['attendance.read', 'attendance.write', 'brief.read', 'leave.board', ...LEAVE_SELF],
+  captain: [...BRIEF_ACTIONS, 'leave.board', ...LEAVE_SELF],
+  deputy: [...BRIEF_ACTIONS, 'leave.board', ...LEAVE_SELF],
+  treasurer: ['brief.read', ...LEAVE_SELF],
+  manager: [...EQUIPMENT_ACTIONS, 'brief.read', ...LEAVE_SELF]
 });
 const WORKSTATION_SESSIONS = ['晨操', '下午訓練', '週六團練', '其他'];
 const WORKSTATION_ATTENDANCE = ['', '到課', '缺課', '遲到', '早退', '遲到及早退', '請假'];
@@ -165,6 +167,7 @@ const BRIEF_KINDS = ['待辦事項','請假登記','訓練提醒','其他交接'
 function workstationFeature_(request, profile, props) {
   const book = SpreadsheetApp.openById(props.getProperty('WORKSTATION_BOOK_ID'));
   const today = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
+  if (request.action.startsWith('leave.')) return workstationLeave_(request, profile, book, today);
   if (request.action.startsWith('brief.')) {
     const role = BRIEF_ROLES[profile.role];
     const manager = profile.level === 3;
@@ -426,4 +429,71 @@ function workstationMoney_(value,signed=false) {
   if(!/^-?\d+(?:\.\d{1,2})?$/.test(raw)||!Number.isSafeInteger(cents)||(!signed&&cents<0))
     throw new Error('Invalid ledger amount');
   return cents;
+}
+
+const WORKSTATION_LEAVE_HEADERS = ['申請編號','姓名','日期','時段','類型','原因','狀態','送件時間','處理人','處理時間'];
+const WORKSTATION_LEAVE_TYPES = ['請假','預報遲到','預報早退','其他'];
+
+function workstationLeave_(request, profile, book, today) {
+  const action = request.action;
+  const name = profile.name.trim();
+  const readSelf = action === 'leave.read';
+  const board = action === 'leave.board';
+  if (board && !workstationValidDate_(request.date)) return {error:'invalid_period'};
+  if ((readSelf || action === 'leave.submit') && !name) return {error:'leave_identity'};
+  const sheetName = '隊員差勤申請';
+  const existing = () => book.getSheetByName(sheetName) &&
+    workstationSheet_(book, sheetName, WORKSTATION_LEAVE_HEADERS);
+  if (readSelf || board) {
+    const sheet = existing();
+    const rows = sheet ? sheet.getDataRange().getDisplayValues().slice(1) : [];
+    return {name:readSelf ? name : '', rows:rows.filter(row => readSelf ? row[1] === name :
+      row[2] === request.date && ['待確認','已確認'].includes(row[6]))
+      .reverse().map(([id, student, date, period, kind, reason, status]) =>
+        ({id,student,date,period,kind,status,...(profile.level === 3 ? {reason} : {})}))};
+  }
+  return workstationLocked_(() => {
+    let sheet = existing();
+    if (action === 'leave.submit') {
+      if (!workstationValidDate_(request.date) || request.date < today ||
+          !WORKSTATION_SESSIONS.includes(request.period) || !WORKSTATION_LEAVE_TYPES.includes(request.kind) ||
+          typeof request.reason !== 'string' || request.reason.length > 200) return {error:'invalid_period'};
+      const directory = workstationSheet_(book, '車隊通訊錄', ['姓名']);
+      if (directory.getDataRange().getDisplayValues().slice(1).filter(row => row[0].trim() === name).length !== 1)
+        return {error:'leave_identity'};
+      if (!sheet) {
+        sheet = book.insertSheet(sheetName);
+        workstationAppend_(sheet, WORKSTATION_LEAVE_HEADERS);
+      }
+      const duplicate = sheet.getDataRange().getDisplayValues().slice(1).some(row =>
+        row[1] === name && row[2] === request.date && row[3] === request.period && ['待確認','已確認'].includes(row[6]));
+      if (duplicate) return {error:'leave_duplicate'};
+      const reason = request.reason.trim();
+      workstationAppend_(sheet, [Utilities.getUuid(),name,request.date,request.period,request.kind,
+        /^[=+\-@]/.test(reason) ? "'" + reason : reason,'待確認',new Date().toISOString(),'','']);
+      return {saved:1};
+    }
+    if (!sheet || typeof request.id !== 'string') return {error:'leave_stale'};
+    const rows = sheet.getDataRange().getDisplayValues();
+    const index = rows.findIndex((row, i) => i && row[0] === request.id);
+    const row = rows[index];
+    if (!row || row[6] !== '待確認' || (action === 'leave.withdraw' && (!name || row[1] !== name)))
+      return {error:'leave_stale'};
+    let status = '已撤回';
+    if (action === 'leave.review') {
+      if (!['approve','reject'].includes(request.decision)) return {error:'invalid_request'};
+      status = request.decision === 'approve' ? '已確認' : '已退回';
+      if (status === '已確認' && row[4] === '請假') {
+        const log = workstationSheet_(book, '學生差勤', ['日期','時段','姓名','差勤','登錄時間']);
+        const last = log.getDataRange().getDisplayValues().slice(1).reverse().find(entry =>
+          entry[0] === row[2] && entry[1] === row[3] && entry[2] === row[1]);
+        if (last?.[3] && last[3] !== '請假') return {error:'leave_attendance_conflict'};
+        if (last?.[3] !== '請假')
+          workstationAppend_(log, [row[2],row[3],row[1],'請假',new Date().toISOString()]);
+      }
+    }
+    sheet.getRange(index + 1, 7, 1, 4).setNumberFormat('@')
+      .setValues([[status,row[7],name || profile.role,new Date().toISOString()]]);
+    return {saved:1};
+  });
 }
